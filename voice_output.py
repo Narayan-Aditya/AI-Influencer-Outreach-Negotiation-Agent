@@ -538,7 +538,7 @@ class VoiceSpeaker:
                 r'\bhaz[aā]+r\b': 'हजार',
                 r'\bhaan\b': 'हाँ',
                 r'\barey\b': 'अरे',
-                r'\bhmm+\b': 'हम्म',
+                r'\bhmm+\b|\bhum+\b': 'हम्म्म',
                 r'\bdekhiye\b': 'देखिए',
                 r'\bdekho\b': 'देखो',
                 r'\bsuno\b': 'सुनो',
@@ -611,6 +611,8 @@ class VoiceSpeaker:
                 return f"{w} {item}"
 
             t = re.sub(r'\b(\d+)\s*(Reels?|Story|Stories|Posts?|Shorts?|Videos?)\b', replace_deliverables_en, t, flags=re.IGNORECASE)
+            t = re.sub(r'\b(hmm+|hum+)\b', 'Hmmmm', t, flags=re.IGNORECASE)
+            t = re.sub(r'\b(uh+|um+)\b', 'Ummm', t, flags=re.IGNORECASE)
 
         # Natural conversational cadence around pricing & deliverables
         if lang == "hindi":

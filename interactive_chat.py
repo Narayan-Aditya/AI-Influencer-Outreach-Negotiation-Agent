@@ -181,17 +181,18 @@ def run_chat_session():
             f"Do NOT provide options, preamble, or explanations. Output ONLY your spoken words to {creator_name}."
         )
         print("🤖 Bot (Agency Manager):\n", end="", flush=True)
-        pipeline = speaker.create_streaming_pipeline()
         full_agent_msg = []
         for chunk in chat.send_message_stream(greeting_prompt):
             sys.stdout.write(chunk)
             sys.stdout.flush()
-            pipeline.push_chunk(chunk)
             full_agent_msg.append(chunk)
         print("\n")
-        pipeline.finish(wait=False)
         agent_msg = "".join(full_agent_msg).strip()
         history.append({"role": "agent", "text": agent_msg})
+
+        # Play greeting as seamless unified audio track (zero pause/play fragmentation)
+        if speaker.enabled and agent_msg:
+            speaker.speak(agent_msg, blocking=False)
     except Exception as e:
         print(f"❌ Error starting conversation: {e}")
         return
@@ -343,17 +344,18 @@ def run_chat_session():
 
         try:
             print("\n🤖 Bot (Agency Manager):\n", end="", flush=True)
-            pipeline = speaker.create_streaming_pipeline()
             full_agent_msg = []
             for chunk in chat.send_message_stream(user_input):
                 sys.stdout.write(chunk)
                 sys.stdout.flush()
-                pipeline.push_chunk(chunk)
                 full_agent_msg.append(chunk)
             print("\n")
-            pipeline.finish(wait=False)
             agent_msg = "".join(full_agent_msg).strip()
             history.append({"role": "agent", "text": agent_msg})
+
+            # Voice synthesis of complete unified turn (Zero pause/play interruptions, seamless continuous audio)
+            if speaker.enabled and agent_msg:
+                speaker.speak(agent_msg, blocking=False)
         except Exception as e:
             print(f"\n❌ Error getting bot response: {e}\n")
 
