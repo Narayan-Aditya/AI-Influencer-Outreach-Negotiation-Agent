@@ -89,11 +89,16 @@ async def generate_and_play(v, ambiance_type="ac_fan", phone_filter=True, add_br
     if tag:
         mode_desc = f"{tag} - {mode_desc}"
 
+    dyn_rate = speaker_helper.get_dynamic_rate(cleaned) if phone_filter else v['rate']
+    has_deal_terms = bool(re.search(r'\b(हजार|रुपये|thousand|rupees|budget|deal|reel|stories|post|₹|\d+k?)\b', cleaned, flags=re.IGNORECASE))
+    post_pause = 0.22 if (has_deal_terms and phone_filter) else 0.0
+
     print("\n" + "=" * 65)
     print(f"▶️ PLAYING [{v['id']}] {v['name']}")
     print(f"   Pipeline: {mode_desc}")
     print(f"   Speech:   \"{cleaned}\"")
     print(f"   Pitch:    {v['pitch']} (Warm chest resonance)")
+    print(f"   Pacing:   {dyn_rate} ({'Deliberate deal cadence with 220ms pause' if post_pause > 0 else 'Brisk conversation'})")
     print(f"   Breath:   {'ON (Biological 0.16s Inhale)' if add_breath else 'OFF'}")
     print("=" * 65)
 
@@ -101,7 +106,7 @@ async def generate_and_play(v, ambiance_type="ac_fan", phone_filter=True, add_br
         temp_path = f.name
 
     try:
-        c = edge_tts.Communicate(cleaned, voice=v['voice'], rate=v['rate'], pitch=v['pitch'])
+        c = edge_tts.Communicate(cleaned, voice=v['voice'], rate=dyn_rate, pitch=v['pitch'])
         await c.save(temp_path)
 
         play_path = mix_audio_with_ambiance(
@@ -109,7 +114,8 @@ async def generate_and_play(v, ambiance_type="ac_fan", phone_filter=True, add_br
             ambiance_type=ambiance_type,
             level_db=-31.0,
             phone_filter=phone_filter,
-            add_breath=add_breath
+            add_breath=add_breath,
+            post_pause_sec=post_pause
         )
 
         subprocess.run(["afplay", play_path])

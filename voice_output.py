@@ -135,9 +135,10 @@ def mix_audio_with_ambiance(
     ambiance_type: str = "ac_fan",
     level_db: float = -32.0,
     phone_filter: bool = True,
-    add_breath: bool = False
+    add_breath: bool = False,
+    post_pause_sec: float = 0.0
 ) -> str:
-    """Mixes subtle background acoustic room tone, optional micro-breath, and phone call mic filter with speech audio."""
+    """Mixes subtle background acoustic room tone, optional micro-breath, post-pause, and phone call mic filter with speech audio."""
     try:
         data, sr = sf.read(file_path)
         if len(data.shape) > 1:
@@ -148,6 +149,11 @@ def mix_audio_with_ambiance(
             breath = generate_micro_breath(sr=sr, duration_sec=0.16, level_db=-31.0)
             gap = np.zeros(int(sr * 0.035))  # 35ms natural pre-vocal pause
             data = np.concatenate([breath, gap, data])
+
+        # Append post-pause for deliberate consideration after pricing/numbers
+        if post_pause_sec > 0:
+            pause = np.zeros(int(sr * post_pause_sec))
+            data = np.concatenate([data, pause])
 
         # Apply phone call / WhatsApp microphone acoustic filter if enabled
         if phone_filter:
@@ -277,11 +283,16 @@ class StreamingVoicePipeline:
                     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
                         temp_path = f.name
 
-                    # Pass PURE CLEAN TEXT to edge_tts with rate and lowered pitch (-2Hz)
+                    # Determine dynamic conversational pacing
+                    chunk_rate = self.speaker.get_dynamic_rate(cleaned)
+                    has_deal_terms = bool(re.search(r'\b(हजार|रुपये|thousand|rupees|budget|deal|reel|stories|post|₹|\d+k?)\b', cleaned, flags=re.IGNORECASE))
+                    post_pause = 0.22 if has_deal_terms else 0.0
+
+                    # Pass PURE CLEAN TEXT to edge_tts with dynamic rate and lowered pitch (-2Hz)
                     communicate = edge_tts.Communicate(
                         cleaned,
                         voice=voice_name,
-                        rate=self.speaker.rate,
+                        rate=chunk_rate,
                         pitch=self.speaker.pitch
                     )
                     asyncio.run(communicate.save(temp_path))
@@ -297,7 +308,8 @@ class StreamingVoicePipeline:
                         ambiance_type=self.speaker.ambiance,
                         level_db=self.speaker.ambiance_level_db,
                         phone_filter=self.speaker.phone_filter,
-                        add_breath=should_add_breath
+                        add_breath=should_add_breath,
+                        post_pause_sec=post_pause
                     )
 
                     with self._lock:
@@ -581,11 +593,32 @@ class VoiceSpeaker:
 
             t = re.sub(r'\b(\d+)\s*(Reels?|Story|Stories|Posts?|Shorts?|Videos?)\b', replace_deliverables_en, t, flags=re.IGNORECASE)
 
+        # Natural conversational cadence around pricing & deliverables
+        if lang == "hindi":
+            # Add breath comma after deliverable and after currency terms
+            t = re.sub(r'(\b(?:एक|दो|तीन|चार|पाँच|\d+)\s*(?:रील|स्टोरीज़|पोस्ट|वीडियो|शॉर्ट्स))\s+(?:ka|ke|ki|का|के|की)\s+', r'\1, ', t, flags=re.IGNORECASE)
+            t = re.sub(r'(हजार रुपये|रुपये)\s+(aur|मिला के|टोटल|confirm|theek|kaisa)', r'\1, \2', t, flags=re.IGNORECASE)
+        else:
+            t = re.sub(r'(\b(?:one|two|three|four|five|\d+)\s*(?:Reels?|Stor(?:y|ies)|Posts?|Videos?))\s+(?:for|that\'s|is)\s+', r'\1, ', t, flags=re.IGNORECASE)
+            t = re.sub(r'(thousand rupees|rupees)\s+(and|total|makes|confirm|deal)', r'\1, \2', t, flags=re.IGNORECASE)
+
         # Preserve Devanagari Unicode and conversational apostrophes (that's, don't, let's)
         t = re.sub(r"[^\w\s.,?!:;\-'\u0900-\u097F]", ' ', t)
-        # Fix spacing before punctuation for natural prosody and cadence
+        # Clean double commas and spaces before punctuation
+        t = re.sub(r',\s*,+', ', ', t)
         t = re.sub(r'\s+([.,?!:;])', r'\1', t)
         return " ".join(t.split()).strip()
+
+    def get_dynamic_rate(self, text: str) -> str:
+        """
+        Calculates dynamic speech rate:
+        - Numbers, pricing & deliverables: Deliberate +6% pace for crisp negotiation clarity.
+        - Conversational greetings & general dialogue: Standard brisk conversational rate (+12%).
+        """
+        has_deal_terms = re.search(r'\b(हजार|रुपये|thousand|rupees|budget|deal|reel|stories|post|₹|\d+k?)\b', text, flags=re.IGNORECASE)
+        if has_deal_terms:
+            return "+6%"
+        return self.rate
 
     def speak(self, text: str, blocking: bool = False):
         """Fallback one-shot speaker for static messages."""
@@ -617,10 +650,14 @@ class VoiceSpeaker:
                     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
                         temp_path = f.name
 
+                    chunk_rate = self.get_dynamic_rate(cleaned)
+                    has_deal_terms = bool(re.search(r'\b(हजार|रुपये|thousand|rupees|budget|deal|reel|stories|post|₹|\d+k?)\b', cleaned, flags=re.IGNORECASE))
+                    post_pause = 0.22 if has_deal_terms else 0.0
+
                     communicate = edge_tts.Communicate(
                         cleaned,
                         voice=voice_name,
-                        rate=self.rate,
+                        rate=chunk_rate,
                         pitch=self.pitch
                     )
                     asyncio.run(communicate.save(temp_path))
@@ -630,7 +667,8 @@ class VoiceSpeaker:
                         ambiance_type=self.ambiance,
                         level_db=self.ambiance_level_db,
                         phone_filter=self.phone_filter,
-                        add_breath=self.breath_enabled
+                        add_breath=self.breath_enabled,
+                        post_pause_sec=post_pause
                     )
 
                     self._current_process = subprocess.Popen(["afplay", temp_path])
