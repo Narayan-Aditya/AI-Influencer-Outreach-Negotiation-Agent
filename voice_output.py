@@ -505,8 +505,8 @@ class VoiceSpeaker:
         t = re.sub(r'<[^>]+>', ' ', text)
         t = re.sub(r'[*_~`#\[\]]', '', t)
 
-        # Human fillers smoothing
-        t = re.sub(r'\b(hmm+|haan|acha|accha|dekho|arey|well|got it)\.\.\.', r'\1, ', t, flags=re.IGNORECASE)
+        # Human fillers smoothing: keep '...' after thinking fillers for 250ms hesitation pause
+        t = re.sub(r'\b(hmm+|haan|acha|accha|dekho|dekhiye|suno|arey|well|wait|got it)\s*[.]{2,}', r'\1... ', t, flags=re.IGNORECASE)
 
         if lang == "hindi":
             # Devanagari terms mapping for native, buttery smooth Hindi TTS
@@ -526,6 +526,12 @@ class VoiceSpeaker:
                 r'\bhaan\b': 'हाँ',
                 r'\barey\b': 'अरे',
                 r'\bhmm+\b': 'हम्म',
+                r'\bdekhiye\b': 'देखिए',
+                r'\bdekho\b': 'देखो',
+                r'\bsuno\b': 'सुनो',
+                r'\bactually\b': 'एक्चुअली',
+                r'\bwait\b': 'वेट',
+                r'\bwell\b': 'वेल',
                 r'\bachha\b|\bacha\b': 'अच्छा',
                 r'\btheek\b': 'ठीक',
                 r'\bperfect\b': 'परफेक्ट',
