@@ -1,27 +1,28 @@
 #!/usr/bin/env python3
 """
-Refined Voice Player (Feature 1: Real Phone Call / WhatsApp Voice Note Filter):
-Plays the approved voice personas with acoustic phone mic filter, room ambiance, and -2Hz pitch:
+Refined Voice Player (Feature 1: Phone Mic Filter + Feature 2: Micro-Breath):
+Plays the approved voice personas with biological inhale, phone mic filter, room ambiance, and -2Hz pitch:
   1. Neerja - Indian Female (Clear, Natural & Professional)
   2. Swara - Hindi Female (Soft, Expressive Devanagari)
   3. Madhur - Hindi Male (Natural Business Tone)
   4. Prabhat - Indian English Male (Friendly, Relaxed Pacing)
 
 Usage:
-  ./venv/bin/python3 play_voices.py               # Plays all 4 voices (Phone Call mode)
-  ./venv/bin/python3 play_voices.py 1             # Plays Neerja (Phone Call mode)
-  ./venv/bin/python3 play_voices.py 2             # Plays Swara (Phone Call mode)
-  ./venv/bin/python3 play_voices.py 3             # Plays Madhur (Phone Call mode)
-  ./venv/bin/python3 play_voices.py 4             # Plays Prabhat (Phone Call mode)
+  ./venv/bin/python3 play_voices.py               # Plays all 4 voices (Full Human Mode)
+  ./venv/bin/python3 play_voices.py 1             # Plays Neerja (Full Human Mode: Breath + Phone Filter + AC Ambiance)
+  ./venv/bin/python3 play_voices.py 2             # Plays Swara (Full Human Mode)
+  ./venv/bin/python3 play_voices.py 3             # Plays Madhur (Full Human Mode)
+  ./venv/bin/python3 play_voices.py 4             # Plays Prabhat (Full Human Mode)
 
-Side-by-Side Comparison (Studio vs Phone Call):
-  ./venv/bin/python3 play_voices.py 1 compare     # Plays Neerja Studio first, then Phone Call
-  ./venv/bin/python3 play_voices.py 2 compare     # Plays Swara Studio first, then Phone Call
+Side-by-Side Comparison (Studio vs Full Human Mode):
+  ./venv/bin/python3 play_voices.py 1 compare     # Plays Neerja Studio first, then Full Human Mode
+  ./venv/bin/python3 play_voices.py 2 compare     # Plays Swara Studio first, then Full Human Mode
 
-Ambiance Modes:
-  ./venv/bin/python3 play_voices.py 1 studio      # Raw Studio mode (no filter, no ambiance)
-  ./venv/bin/python3 play_voices.py 1 fan         # Phone Call with Ceiling Fan sound
-  ./venv/bin/python3 play_voices.py 1 crowd       # Phone Call with Office/Cafe murmur
+Other Modes:
+  ./venv/bin/python3 play_voices.py 1 studio      # Raw Studio mode (no filter, no breath, no ambiance)
+  ./venv/bin/python3 play_voices.py 1 nobreath    # Phone Call mode without breath
+  ./venv/bin/python3 play_voices.py 1 fan         # Full Human Mode with Ceiling Fan sound
+  ./venv/bin/python3 play_voices.py 1 crowd       # Full Human Mode with Office/Cafe murmur
 """
 
 import sys
@@ -78,18 +79,22 @@ VOICE_LIST = [
 ]
 
 
-async def generate_and_play(v, ambiance_type="ac_fan", phone_filter=True, tag=""):
+async def generate_and_play(v, ambiance_type="ac_fan", phone_filter=True, add_breath=True, tag=""):
     cleaned = speaker_helper.clean_text_for_speech(v['raw_text'], lang=v['lang'])
-    mode_desc = "PHONE CALL / WHATSAPP FILTER ON" if phone_filter else "STUDIO MODE (Raw Digital)"
+    features = []
+    if phone_filter: features.append("Phone Filter")
+    if add_breath: features.append("Micro-Breath Inhale")
+    if ambiance_type != "off": features.append(f"{ambiance_type.upper()} Ambiance")
+    mode_desc = " + ".join(features) if features else "STUDIO MODE (Raw Digital)"
     if tag:
         mode_desc = f"{tag} - {mode_desc}"
 
     print("\n" + "=" * 65)
     print(f"▶️ PLAYING [{v['id']}] {v['name']}")
-    print(f"   Mode:     {mode_desc}")
+    print(f"   Pipeline: {mode_desc}")
     print(f"   Speech:   \"{cleaned}\"")
     print(f"   Pitch:    {v['pitch']} (Warm chest resonance)")
-    print(f"   Ambiance: {ambiance_type.upper()}")
+    print(f"   Breath:   {'ON (Biological 0.16s Inhale)' if add_breath else 'OFF'}")
     print("=" * 65)
 
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
@@ -103,7 +108,8 @@ async def generate_and_play(v, ambiance_type="ac_fan", phone_filter=True, tag=""
             temp_path,
             ambiance_type=ambiance_type,
             level_db=-31.0,
-            phone_filter=phone_filter
+            phone_filter=phone_filter,
+            add_breath=add_breath
         )
 
         subprocess.run(["afplay", play_path])
@@ -120,19 +126,28 @@ async def main():
 
     ambiance = "ac_fan"
     phone_filter = True
+    add_breath = True
 
     if mode == "studio":
         phone_filter = False
+        add_breath = False
         ambiance = "off"
+    elif mode in ["nobreath", "no_breath"]:
+        phone_filter = True
+        add_breath = False
+        ambiance = "ac_fan"
     elif mode in ["fan", "ceiling_fan"]:
         ambiance = "fan"
         phone_filter = True
+        add_breath = True
     elif mode in ["crowd", "office"]:
         ambiance = "crowd"
         phone_filter = True
+        add_breath = True
     elif mode in ["ac", "phone"]:
         ambiance = "ac_fan"
         phone_filter = True
+        add_breath = True
 
     if target:
         selected = [v for v in VOICE_LIST if v['id'] == target]
@@ -143,17 +158,17 @@ async def main():
         item = selected[0]
         if mode == "compare":
             print(f"\n🔄 RUNNING SIDE-BY-SIDE COMPARISON FOR [{item['name']}]:")
-            print("1️⃣ Playing Studio Mode first...")
-            await generate_and_play(item, ambiance_type="off", phone_filter=False, tag="1/2 STUDIO")
+            print("1️⃣ Playing Studio Mode first (No Filter, No Breath)...")
+            await generate_and_play(item, ambiance_type="off", phone_filter=False, add_breath=False, tag="1/2 STUDIO")
             time.sleep(1.2)
-            print("\n2️⃣ Now playing Phone Call / WhatsApp Filter Mode...")
-            await generate_and_play(item, ambiance_type="ac_fan", phone_filter=True, tag="2/2 PHONE CALL")
+            print("\n2️⃣ Now playing Full Human Pipeline (Micro-Breath + Phone Filter + AC Ambiance)...")
+            await generate_and_play(item, ambiance_type="ac_fan", phone_filter=True, add_breath=True, tag="2/2 FULL HUMAN")
         else:
-            await generate_and_play(item, ambiance_type=ambiance, phone_filter=phone_filter)
+            await generate_and_play(item, ambiance_type=ambiance, phone_filter=phone_filter, add_breath=add_breath)
     else:
-        print("\n🎧 PLAYING REFINED 4 VOICES (WITH FEATURE 1: PHONE CALL FILTER):")
+        print("\n🎧 PLAYING REFINED 4 VOICES (WITH FEATURE 1: PHONE FILTER + FEATURE 2: MICRO-BREATH):")
         for v in VOICE_LIST:
-            await generate_and_play(v, ambiance_type=ambiance, phone_filter=phone_filter)
+            await generate_and_play(v, ambiance_type=ambiance, phone_filter=phone_filter, add_breath=add_breath)
             time.sleep(1.0)
         print("\n✅ Finished playing refined voices!")
 

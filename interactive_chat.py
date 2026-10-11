@@ -288,6 +288,17 @@ def run_chat_session():
                 print("🎧 Phone filter DISABLED (Pure studio mode).\n")
             continue
 
+        if user_input.lower().startswith("/breath"):
+            parts = user_input.lower().split()
+            b_val = parts[1] if len(parts) > 1 else "on"
+            if b_val in ["on", "true", "1"]:
+                speaker.set_breath(True)
+                print("🌬️ Biological micro-breath inhale ENABLED.\n")
+            else:
+                speaker.set_breath(False)
+                print("🔇 Biological micro-breath inhale DISABLED.\n")
+            continue
+
         if user_input.lower() == "/summary":
             print("\n⏳ Extracting live deal summary...")
             try:

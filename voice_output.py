@@ -108,17 +108,46 @@ def apply_phone_call_filter(data: np.ndarray, sr: int = 24000) -> np.ndarray:
     return f
 
 
+def generate_micro_breath(sr: int = 24000, duration_sec: float = 0.16, level_db: float = -31.0) -> np.ndarray:
+    """
+    Synthesizes a realistic biological micro-inhale before speech:
+    - Shaped oral cavity aspiration noise (800Hz - 4200Hz)
+    - Natural asymmetric inhalation envelope (gradual air intake, quick taper into phonation)
+    """
+    num_samples = int(sr * duration_sec)
+    t = np.linspace(0, 1, num_samples)
+    noise = np.random.randn(num_samples)
+    sos = signal.butter(3, [800, 4200], btype="bandpass", fs=sr, output="sos")
+    aspiration = signal.sosfilt(sos, noise)
+    b, a = signal.iirpeak(2100, 2.0, fs=sr)
+    peak_res = signal.lfilter(b, a, aspiration)
+    aspiration = 0.75 * aspiration + 0.25 * peak_res
+    aspiration = aspiration / (np.max(np.abs(aspiration)) + 1e-9)
+    env = (t ** 1.6) * ((1.0 - t) ** 0.5)
+    env = env / (np.max(env) + 1e-9)
+    breath = aspiration * env
+    amp = 10.0 ** (level_db / 20.0)
+    return breath * amp
+
+
 def mix_audio_with_ambiance(
     file_path: str,
     ambiance_type: str = "ac_fan",
     level_db: float = -32.0,
-    phone_filter: bool = True
+    phone_filter: bool = True,
+    add_breath: bool = False
 ) -> str:
-    """Mixes subtle background acoustic room tone and optional phone call mic filter with speech audio."""
+    """Mixes subtle background acoustic room tone, optional micro-breath, and phone call mic filter with speech audio."""
     try:
         data, sr = sf.read(file_path)
         if len(data.shape) > 1:
             data = data[:, 0]
+
+        # Prepend subtle biological inhale before speech turn
+        if add_breath:
+            breath = generate_micro_breath(sr=sr, duration_sec=0.16, level_db=-31.0)
+            gap = np.zeros(int(sr * 0.035))  # 35ms natural pre-vocal pause
+            data = np.concatenate([breath, gap, data])
 
         # Apply phone call / WhatsApp microphone acoustic filter if enabled
         if phone_filter:
@@ -199,6 +228,7 @@ class StreamingVoicePipeline:
         self.sentence_queue = queue.Queue()
         self.audio_queue = queue.Queue()
         self.is_active = True
+        self.is_first_chunk = True
         self.temp_files = []
         self._lock = threading.Lock()
 
@@ -256,12 +286,18 @@ class StreamingVoicePipeline:
                     )
                     asyncio.run(communicate.save(temp_path))
 
+                    # Prepend biological micro-breath on first chunk of turn
+                    should_add_breath = self.is_first_chunk and self.speaker.breath_enabled
+                    if self.is_first_chunk:
+                        self.is_first_chunk = False
+
                     # Apply real phone mic / WhatsApp audio note filter & room ambiance
                     temp_path = mix_audio_with_ambiance(
                         temp_path,
                         ambiance_type=self.speaker.ambiance,
                         level_db=self.speaker.ambiance_level_db,
-                        phone_filter=self.speaker.phone_filter
+                        phone_filter=self.speaker.phone_filter,
+                        add_breath=should_add_breath
                     )
 
                     with self._lock:
@@ -385,6 +421,7 @@ class VoiceSpeaker:
         ambiance: str = "ac_fan",
         ambiance_level_db: float = -32.0,
         phone_filter: bool = True,
+        breath_enabled: bool = True,
         enabled: bool = True
     ):
         """
@@ -400,6 +437,7 @@ class VoiceSpeaker:
         - ambiance: 'ac_fan' (subtle AC/fan room tone masking digital silence), 'fan', 'crowd', or 'off'
         - ambiance_level_db: -32.0 dB (ultra-subtle, natural background presence)
         - phone_filter: True (AMR-WB HD Voice + MEMS phone capsule filter for realistic phone calls)
+        - breath_enabled: True (Subtle biological oral/tracheal inhale cue before speech turn)
         """
         self.mode = mode
         self.rate = rate  # +12% gives crisp, human-paced speech without rushing
@@ -407,6 +445,7 @@ class VoiceSpeaker:
         self.ambiance = ambiance
         self.ambiance_level_db = ambiance_level_db
         self.phone_filter = phone_filter
+        self.breath_enabled = breath_enabled
         self.enabled = enabled
         self._current_process = None
         self._active_pipeline = None
@@ -590,7 +629,8 @@ class VoiceSpeaker:
                         temp_path,
                         ambiance_type=self.ambiance,
                         level_db=self.ambiance_level_db,
-                        phone_filter=self.phone_filter
+                        phone_filter=self.phone_filter,
+                        add_breath=self.breath_enabled
                     )
 
                     self._current_process = subprocess.Popen(["afplay", temp_path])
@@ -621,3 +661,6 @@ class VoiceSpeaker:
 
     def set_phone_filter(self, enabled: bool):
         self.phone_filter = enabled
+
+    def set_breath(self, enabled: bool):
+        self.breath_enabled = enabled
