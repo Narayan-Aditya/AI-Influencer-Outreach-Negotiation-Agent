@@ -125,19 +125,18 @@ def run_chat_session():
     print("    - Type '/summary' to see current deal extraction")
     print("    - Type '/brief' to view the brand requirements again")
     print("    - Type '/voice off' or '/voice on' to toggle audio playback")
-    print("    - Type '/voice salman' (Warm, casual human male tone - Recommended)")
-    print("    - Type '/voice swara' (Soft, expressive natural female tone)")
-    print("    - Type '/voice madhur' (Clean Hindi male tone)")
+    print("    - Type '/voice madhur' (Clean Hindi male tone - Recommended)")
+    print("    - Type '/voice swara' (Soft, natural female tone)")
     print("    - Type '/voice english' (Indian English male tone)")
-    print("    - Type '/voice auto' (Auto-mirrors language with SSML human prosody)")
-    print("    - Type '/voice fast' (+20%), '/voice relaxed' (+12%), or '/voice normal' (+0%)")
+    print("    - Type '/voice auto' (Auto-mirrors language)")
+    print("    - Type '/voice fast' (+22%) or '/voice normal' (+0%)")
     print("    - Type 'exit' or 'quit' to end chat and finalize deal sheet")
     print("=" * 65 + "\n")
 
-    # Initialize Smart Humanized Voice Speaker (Salman tone, relaxed +12% cadence, SSML breath pauses)
-    speaker = VoiceSpeaker(mode="auto", rate="+12%", enabled=True)
+    # Initialize Smart Voice Speaker (Clean dialogue, +16% rate)
+    speaker = VoiceSpeaker(mode="auto", rate="+16%", enabled=True)
     if speaker.enabled:
-        print("🔊 Humanized Voice Playback is ON (Native Phonetics, Micro-Breathing SSML, Casual Voice Note Tone)\n")
+        print("🔊 Smart Voice Playback is ON (Auto Hindi/English mirror, clean spoken dialogue)\n")
 
     chat = engine.create_creator_chat(parsed_brief, creator_name=creator_name, creator_niche=creator_niche)
     history = []
