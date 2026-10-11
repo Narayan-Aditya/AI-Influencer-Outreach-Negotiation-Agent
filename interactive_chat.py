@@ -235,11 +235,33 @@ def run_chat_session():
             print(f"• Next Steps: {deal_summary.next_steps}")
             print("=" * 65)
 
-            # Save report
+            # Save report JSON
             out_file = f"deal_summary_{creator_name.replace(' ', '_').lower()}.json"
             with open(out_file, "w") as f:
                 json.dump(deal_summary.model_dump(), f, indent=2)
             print(f"\n💾 Saved structured deal summary to: {out_file}")
+
+            # Append to cumulative CSV deals tracker
+            import csv
+            from datetime import datetime
+            csv_file = "deals_tracker.csv"
+            file_exists = os.path.exists(csv_file)
+            with open(csv_file, "a", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(["Date", "Brand", "Creator", "Status", "Initial Quote", "Final Price", "Deliverables", "Notes", "Next Steps"])
+                writer.writerow([
+                    datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    parsed_brief.brand_name,
+                    deal_summary.creator_name,
+                    deal_summary.status,
+                    deal_summary.initial_quoted_price,
+                    deal_summary.final_agreed_price,
+                    " | ".join(deal_summary.deliverables_agreed),
+                    deal_summary.negotiation_notes,
+                    deal_summary.next_steps
+                ])
+            print(f"📈 Appended deal to campaign tracker: {csv_file}")
         except Exception as e:
             print(f"Could not generate final deal summary: {e}")
     else:

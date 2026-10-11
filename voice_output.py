@@ -44,11 +44,16 @@ class VoiceSpeaker:
         return self._kitten_tts
 
     def clean_text_for_speech(self, text: str) -> str:
-        """Strips markdown asterisks, brackets, and prepares natural speech text."""
+        """Strips markdown asterisks, brackets, and prepares natural Hindi speech text."""
         t = re.sub(r'[*_~`#\[\]]', '', text)
-        t = t.replace('₹', 'रुपये ')
+        # Currency: INR 16,000 or ₹16,000 -> 16 हजार रुपये
+        t = re.sub(r'(?:INR|₹)\s*(\d+),000', r'\1 हजार रुपये', t, flags=re.IGNORECASE)
+        t = re.sub(r'(?:INR|₹)\s*(\d+)', r'\1 रुपये', t, flags=re.IGNORECASE)
+        # Suffix k: 5k -> 5 हजार
         t = re.sub(r'(\d+)k\b', r'\1 हजार', t, flags=re.IGNORECASE)
-        # Remove emojis
+        # Dates: 25th -> 25 तारीख
+        t = re.sub(r'(\d+)(?:st|nd|rd|th)\b', r'\1 तारीख', t, flags=re.IGNORECASE)
+        # Clean special chars / emojis
         t = re.sub(r'[^\w\s.,?!:;\-]', ' ', t)
         return " ".join(t.split()).strip()
 
