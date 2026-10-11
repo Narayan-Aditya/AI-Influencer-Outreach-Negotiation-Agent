@@ -409,8 +409,21 @@ class StreamingVoicePipeline:
             self.play_thread.join()
 
     def stop(self):
-        """Immediately halts current playback and cleans up."""
+        """Immediately halts current playback, cancels pending queue items, and cleans up."""
         self.is_active = False
+        # Drain sentence and audio queues instantly for true barge-in
+        while not self.sentence_queue.empty():
+            try:
+                self.sentence_queue.get_nowait()
+                self.sentence_queue.task_done()
+            except Exception:
+                break
+        while not self.audio_queue.empty():
+            try:
+                self.audio_queue.get_nowait()
+                self.audio_queue.task_done()
+            except Exception:
+                break
         if self.speaker._current_process and self.speaker._current_process.poll() is None:
             try:
                 self.speaker._current_process.terminate()

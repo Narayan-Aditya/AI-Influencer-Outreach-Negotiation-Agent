@@ -13,6 +13,8 @@ if os.path.exists(venv_python) and sys.executable != venv_python:
     os.execv(venv_python, [venv_python] + sys.argv)
 
 import json
+import select
+import threading
 import warnings
 import logging
 warnings.filterwarnings("ignore")
@@ -77,6 +79,34 @@ def select_brief():
     else:
         print("Invalid choice, defaulting to 1.")
         return SAMPLE_BRIEFS["1"]["content"]
+
+
+def interruptible_input(prompt: str, speaker: VoiceSpeaker) -> str:
+    """
+    Listens for user input with instant full-duplex barge-in.
+    The moment any keystroke or newline is detected on stdin, speaker.stop()
+    is triggered within 50ms, immediately silencing the bot.
+    """
+    stop_event = threading.Event()
+
+    def _monitor():
+        while not stop_event.is_set():
+            try:
+                r, _, _ = select.select([sys.stdin], [], [], 0.05)
+                if r:
+                    speaker.stop()
+                    break
+            except Exception:
+                break
+
+    monitor = threading.Thread(target=_monitor, daemon=True)
+    monitor.start()
+    try:
+        val = input(prompt).strip()
+    finally:
+        stop_event.set()
+        speaker.stop()
+    return val
 
 
 def run_chat_session():
@@ -169,7 +199,7 @@ def run_chat_session():
     # Conversation Loop
     while True:
         try:
-            user_input = input(f"👤 {creator_name}: ").strip()
+            user_input = interruptible_input(f"👤 {creator_name}: ", speaker)
         except (KeyboardInterrupt, EOFError):
             speaker.stop()
             print("\nExiting chat...")
