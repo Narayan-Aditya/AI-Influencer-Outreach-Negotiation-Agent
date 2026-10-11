@@ -83,19 +83,58 @@ def create_ambiance(num_samples: int, sr: int = 24000, ambiance_type: str = "ac_
     return amb
 
 
-def mix_audio_with_ambiance(file_path: str, ambiance_type: str = "ac_fan", level_db: float = -32.0) -> str:
-    """Mixes subtle background acoustic room tone with speech audio."""
+def apply_phone_call_filter(data: np.ndarray, sr: int = 24000) -> np.ndarray:
+    """
+    Applies real phone call / WhatsApp voice note acoustics (AMR-WB HD Voice + MEMS Mic):
+    - Cuts unnatural studio sub-bass below 180 Hz
+    - Low-pass filters frequencies above 7000 Hz to simulate phone telecom bandwidth
+    - Adds mid-frequency smartphone capsule presence around 2.4 kHz
+    - Adds subtle warm harmonic saturation typical of smartphone microphones
+    """
+    if len(data.shape) > 1:
+        data = data[:, 0]
+    # 1. High-pass filter at 180 Hz
+    sos_hp = signal.butter(2, 180, btype="highpass", fs=sr, output="sos")
+    f = signal.sosfilt(sos_hp, data)
+    # 2. Low-pass filter at 7000 Hz (AMR-WB telecom bandwidth)
+    sos_lp = signal.butter(2, 7000, btype="lowpass", fs=sr, output="sos")
+    f = signal.sosfilt(sos_lp, f)
+    # 3. Smartphone microphone capsule presence (2.4 kHz boost)
+    b, a = signal.iirpeak(2400, 1.5, fs=sr)
+    boosted = signal.lfilter(b, a, f)
+    f = 0.82 * f + 0.18 * boosted
+    # 4. MEMS mic gentle harmonic warmth
+    f = np.tanh(f * 1.05) / 1.05
+    return f
+
+
+def mix_audio_with_ambiance(
+    file_path: str,
+    ambiance_type: str = "ac_fan",
+    level_db: float = -32.0,
+    phone_filter: bool = True
+) -> str:
+    """Mixes subtle background acoustic room tone and optional phone call mic filter with speech audio."""
     try:
         data, sr = sf.read(file_path)
         if len(data.shape) > 1:
             data = data[:, 0]
-        amb = create_ambiance(len(data), sr=sr, ambiance_type=ambiance_type, level_db=level_db)
-        mixed = data + amb
-        peak = np.max(np.abs(mixed))
-        if peak > 0.98:
-            mixed = (mixed / peak) * 0.98
-        out_path = file_path.rsplit(".", 1)[0] + "_amb.wav"
-        sf.write(out_path, mixed, sr)
+
+        # Apply phone call / WhatsApp microphone acoustic filter if enabled
+        if phone_filter:
+            data = apply_phone_call_filter(data, sr=sr)
+
+        # Mix background room tone
+        if ambiance_type and ambiance_type != "off":
+            amb = create_ambiance(len(data), sr=sr, ambiance_type=ambiance_type, level_db=level_db)
+            data = data + amb
+
+        peak = np.max(np.abs(data))
+        if peak > 0.96:
+            data = (data / peak) * 0.96
+
+        out_path = file_path.rsplit(".", 1)[0] + "_proc.wav"
+        sf.write(out_path, data, sr)
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
@@ -217,13 +256,13 @@ class StreamingVoicePipeline:
                     )
                     asyncio.run(communicate.save(temp_path))
 
-                    # Mix subtle background acoustic presence (AC/fan/crowd room tone)
-                    if self.speaker.ambiance and self.speaker.ambiance != "off":
-                        temp_path = mix_audio_with_ambiance(
-                            temp_path,
-                            ambiance_type=self.speaker.ambiance,
-                            level_db=self.speaker.ambiance_level_db
-                        )
+                    # Apply real phone mic / WhatsApp audio note filter & room ambiance
+                    temp_path = mix_audio_with_ambiance(
+                        temp_path,
+                        ambiance_type=self.speaker.ambiance,
+                        level_db=self.speaker.ambiance_level_db,
+                        phone_filter=self.speaker.phone_filter
+                    )
 
                     with self._lock:
                         self.temp_files.append(temp_path)
@@ -345,6 +384,7 @@ class VoiceSpeaker:
         pitch: str = "-2Hz",
         ambiance: str = "ac_fan",
         ambiance_level_db: float = -32.0,
+        phone_filter: bool = True,
         enabled: bool = True
     ):
         """
@@ -359,12 +399,14 @@ class VoiceSpeaker:
         - pitch: '-2Hz' (1-2 points lower for warm, non-digital chest resonance)
         - ambiance: 'ac_fan' (subtle AC/fan room tone masking digital silence), 'fan', 'crowd', or 'off'
         - ambiance_level_db: -32.0 dB (ultra-subtle, natural background presence)
+        - phone_filter: True (AMR-WB HD Voice + MEMS phone capsule filter for realistic phone calls)
         """
         self.mode = mode
         self.rate = rate  # +12% gives crisp, human-paced speech without rushing
         self.pitch = pitch  # -2Hz gives warm, grounded human tone
         self.ambiance = ambiance
         self.ambiance_level_db = ambiance_level_db
+        self.phone_filter = phone_filter
         self.enabled = enabled
         self._current_process = None
         self._active_pipeline = None
@@ -544,12 +586,12 @@ class VoiceSpeaker:
                     )
                     asyncio.run(communicate.save(temp_path))
 
-                    if self.ambiance and self.ambiance != "off":
-                        temp_path = mix_audio_with_ambiance(
-                            temp_path,
-                            ambiance_type=self.ambiance,
-                            level_db=self.ambiance_level_db
-                        )
+                    temp_path = mix_audio_with_ambiance(
+                        temp_path,
+                        ambiance_type=self.ambiance,
+                        level_db=self.ambiance_level_db,
+                        phone_filter=self.phone_filter
+                    )
 
                     self._current_process = subprocess.Popen(["afplay", temp_path])
                     self._current_process.wait()
@@ -576,3 +618,6 @@ class VoiceSpeaker:
     def set_ambiance(self, ambiance: str, level_db: float = -32.0):
         self.ambiance = ambiance
         self.ambiance_level_db = level_db
+
+    def set_phone_filter(self, enabled: bool):
+        self.phone_filter = enabled

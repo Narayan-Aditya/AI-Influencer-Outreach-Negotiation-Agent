@@ -277,6 +277,17 @@ def run_chat_session():
                 print(f"🎙️ Pitch set to {pitch_type}.\n")
             continue
 
+        if user_input.lower().startswith("/filter"):
+            parts = user_input.lower().split()
+            f_type = parts[1] if len(parts) > 1 else "phone"
+            if f_type in ["phone", "whatsapp", "call", "on"]:
+                speaker.set_phone_filter(True)
+                print("📱 Phone Call / WhatsApp MEMS mic acoustic filter ENABLED.\n")
+            else:
+                speaker.set_phone_filter(False)
+                print("🎧 Phone filter DISABLED (Pure studio mode).\n")
+            continue
+
         if user_input.lower() == "/summary":
             print("\n⏳ Extracting live deal summary...")
             try:
