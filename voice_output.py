@@ -132,7 +132,7 @@ def generate_micro_breath(sr: int = 24000, duration_sec: float = 0.16, level_db:
 
 def mix_audio_with_ambiance(
     file_path: str,
-    ambiance_type: str = "ac_fan",
+    ambiance_type: str = "off",
     level_db: float = -32.0,
     phone_filter: bool = True,
     add_breath: bool = False,
@@ -443,7 +443,7 @@ class VoiceSpeaker:
         mode: str = "auto",
         rate: str = "+12%",
         pitch: str = "-2Hz",
-        ambiance: str = "ac_fan",
+        ambiance: str = "off",
         ambiance_level_db: float = -32.0,
         phone_filter: bool = True,
         breath_enabled: bool = True,

@@ -80,10 +80,10 @@ VOICE_LIST = [
 ]
 
 
-async def generate_and_play(v, ambiance_type="ac_fan", phone_filter=True, add_breath=True, tag=""):
+async def generate_and_play(v, ambiance_type="off", phone_filter=True, add_breath=True, tag=""):
     cleaned = speaker_helper.clean_text_for_speech(v['raw_text'], lang=v['lang'])
     features = []
-    if phone_filter: features.append("Phone Filter")
+    if phone_filter: features.append("Phone Mic Filter")
     if add_breath: features.append("Micro-Breath Inhale")
     if ambiance_type != "off": features.append(f"{ambiance_type.upper()} Ambiance")
     mode_desc = " + ".join(features) if features else "STUDIO MODE (Raw Digital)"
@@ -101,6 +101,7 @@ async def generate_and_play(v, ambiance_type="ac_fan", phone_filter=True, add_br
     print(f"   Pitch:    {v['pitch']} (Warm chest resonance)")
     print(f"   Pacing:   {dyn_rate} ({'Deliberate deal cadence with 220ms pause' if post_pause > 0 else 'Brisk conversation'})")
     print(f"   Breath:   {'ON (Biological 0.16s Inhale)' if add_breath else 'OFF'}")
+    print(f"   Ambiance: {ambiance_type.upper()} (Clean background)")
     print("=" * 65)
 
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
@@ -131,7 +132,7 @@ async def main():
     target = sys.argv[1].strip() if len(sys.argv) > 1 else None
     mode = sys.argv[2].strip().lower() if len(sys.argv) > 2 else "phone"
 
-    ambiance = "ac_fan"
+    ambiance = "off"
     phone_filter = True
     add_breath = True
 
@@ -139,10 +140,10 @@ async def main():
         phone_filter = False
         add_breath = False
         ambiance = "off"
-    elif mode in ["nobreath", "no_breath"]:
-        phone_filter = True
-        add_breath = False
+    elif mode in ["ac", "ac_fan"]:
         ambiance = "ac_fan"
+        phone_filter = True
+        add_breath = True
     elif mode in ["fan", "ceiling_fan"]:
         ambiance = "fan"
         phone_filter = True
@@ -151,8 +152,12 @@ async def main():
         ambiance = "crowd"
         phone_filter = True
         add_breath = True
-    elif mode in ["ac", "phone"]:
-        ambiance = "ac_fan"
+    elif mode in ["nobreath", "no_breath"]:
+        phone_filter = True
+        add_breath = False
+        ambiance = "off"
+    elif mode in ["phone", "clean"]:
+        ambiance = "off"
         phone_filter = True
         add_breath = True
 
@@ -168,8 +173,8 @@ async def main():
             print("1️⃣ Playing Studio Mode first (No Filter, No Breath)...")
             await generate_and_play(item, ambiance_type="off", phone_filter=False, add_breath=False, tag="1/2 STUDIO")
             time.sleep(1.2)
-            print("\n2️⃣ Now playing Full Human Pipeline (Micro-Breath + Phone Filter + AC Ambiance)...")
-            await generate_and_play(item, ambiance_type="ac_fan", phone_filter=True, add_breath=True, tag="2/2 FULL HUMAN")
+            print("\n2️⃣ Now playing Clean Human Mode (Micro-Breath + Phone Filter, Clean Background)...")
+            await generate_and_play(item, ambiance_type="off", phone_filter=True, add_breath=True, tag="2/2 CLEAN HUMAN")
         else:
             await generate_and_play(item, ambiance_type=ambiance, phone_filter=phone_filter, add_breath=add_breath)
     else:

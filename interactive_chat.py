@@ -166,10 +166,10 @@ def run_chat_session():
     print("    - Type 'exit' or 'quit' to end chat and finalize deal sheet")
     print("=" * 65 + "\n")
 
-    # Initialize Smart Voice Speaker (Auto mirror: Swara for Hindi, Neerja for English, with warm -2Hz pitch and room ambiance)
-    speaker = VoiceSpeaker(mode="auto", rate="+12%", pitch="-2Hz", ambiance="ac_fan", enabled=True)
+    # Initialize Smart Voice Speaker (Auto mirror: Swara for Hindi, Neerja for English, with warm -2Hz pitch and clean background)
+    speaker = VoiceSpeaker(mode="auto", rate="+12%", pitch="-2Hz", ambiance="off", enabled=True)
     if speaker.enabled:
-        print("🔊 Smart Voice Playback is ON (Auto Hindi/English mirror, -2Hz pitch, AC/room ambiance)\n")
+        print("🔊 Smart Voice Playback is ON (Auto Hindi/English mirror, -2Hz pitch, Clean background)\n")
 
     chat = engine.create_creator_chat(parsed_brief, creator_name=creator_name, creator_niche=creator_niche)
     history = []
