@@ -124,15 +124,20 @@ def run_chat_session():
     print("    - Type normally to respond as the Creator")
     print("    - Type '/summary' to see current deal extraction")
     print("    - Type '/brief' to view the brand requirements again")
-    print("    - Type '/voice off' or '/voice on' to toggle TTS audio playback")
-    print("    - Type '/voice auto' (Auto Hindi/English mirror), '/voice fast', or '/voice normal'")
+    print("    - Type '/voice off' or '/voice on' to toggle audio playback")
+    print("    - Type '/voice salman' (Warm, casual human male tone - Recommended)")
+    print("    - Type '/voice swara' (Soft, expressive natural female tone)")
+    print("    - Type '/voice madhur' (Clean Hindi male tone)")
+    print("    - Type '/voice english' (Indian English male tone)")
+    print("    - Type '/voice auto' (Auto-mirrors language with SSML human prosody)")
+    print("    - Type '/voice fast' (+20%), '/voice relaxed' (+12%), or '/voice normal' (+0%)")
     print("    - Type 'exit' or 'quit' to end chat and finalize deal sheet")
     print("=" * 65 + "\n")
 
-    # Initialize Smart Auto-Language Voice Speaker (+22% human pacing speed, real-time streaming)
-    speaker = VoiceSpeaker(mode="auto", rate="+22%", enabled=True)
+    # Initialize Smart Humanized Voice Speaker (Salman tone, relaxed +12% cadence, SSML breath pauses)
+    speaker = VoiceSpeaker(mode="auto", rate="+12%", enabled=True)
     if speaker.enabled:
-        print("🔊 Smart Voice Playback is ON (Auto Hindi/English mirror, faster +22% human pacing, real-time audio stream)\n")
+        print("🔊 Humanized Voice Playback is ON (Native Phonetics, Micro-Breathing SSML, Casual Voice Note Tone)\n")
 
     chat = engine.create_creator_chat(parsed_brief, creator_name=creator_name, creator_niche=creator_niche)
     history = []
@@ -193,29 +198,44 @@ def run_chat_session():
             print("🔊 Voice playback enabled.\n")
             continue
 
+        if user_input.lower() == "/voice salman":
+            speaker.set_mode("salman")
+            print("🎙️ Voice set to Salman (Warm, casual human male tone - Recommended).\n")
+            continue
+
+        if user_input.lower() in ["/voice swara", "/voice female"]:
+            speaker.set_mode("swara")
+            print("🎙️ Voice set to Swara (Soft, expressive natural female tone).\n")
+            continue
+
+        if user_input.lower() in ["/voice madhur", "/voice hindi"]:
+            speaker.set_mode("madhur")
+            print("🎙️ Voice set to Madhur (Clean Hindi male tone).\n")
+            continue
+
+        if user_input.lower() in ["/voice english", "/voice prabhat"]:
+            speaker.set_mode("english")
+            print("🎙️ Voice set to Prabhat (Indian English male tone).\n")
+            continue
+
         if user_input.lower() == "/voice auto":
             speaker.set_mode("auto")
-            print("🎙️ Voice set to Auto (Mirrors Hindi / English automatically).\n")
+            print("🎙️ Voice set to Auto (Mirrors Hindi/English with native phonetics).\n")
             continue
 
         if user_input.lower() == "/voice fast":
-            speaker.set_rate("+25%")
-            print("⚡ Voice speed set to Fast (+25%).\n")
+            speaker.set_rate("+20%")
+            print("⚡ Voice speed set to Fast (+20%).\n")
+            continue
+
+        if user_input.lower() == "/voice relaxed":
+            speaker.set_rate("+12%")
+            print("🍃 Voice speed set to Relaxed (+12%).\n")
             continue
 
         if user_input.lower() == "/voice normal":
             speaker.set_rate("+0%")
             print("⏱️ Voice speed set to Normal (+0%).\n")
-            continue
-
-        if user_input.lower() == "/voice hindi":
-            speaker.set_mode("hindi_male")
-            print("🎙️ Voice set to Clean Hindi Male (Madhur).\n")
-            continue
-
-        if user_input.lower() == "/voice female":
-            speaker.set_mode("hindi_female")
-            print("🎙️ Voice set to Clean Hindi Female (Swara).\n")
             continue
 
         if user_input.lower() == "/voice kitten":
