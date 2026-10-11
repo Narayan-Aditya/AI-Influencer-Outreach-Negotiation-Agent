@@ -388,8 +388,10 @@ class VoiceSpeaker:
 
             t = re.sub(r'\b(\d+)\s*(Reels?|Story|Stories|Posts?|Shorts?|Videos?)\b', replace_deliverables_en, t, flags=re.IGNORECASE)
 
-        # Preserve Devanagari Unicode
-        t = re.sub(r'[^\w\s.,?!:;\-\u0900-\u097F]', ' ', t)
+        # Preserve Devanagari Unicode and conversational apostrophes (that's, don't, let's)
+        t = re.sub(r"[^\w\s.,?!:;\-'\u0900-\u097F]", ' ', t)
+        # Fix spacing before punctuation for natural prosody and cadence
+        t = re.sub(r'\s+([.,?!:;])', r'\1', t)
         return " ".join(t.split()).strip()
 
     def speak(self, text: str, blocking: bool = False):
