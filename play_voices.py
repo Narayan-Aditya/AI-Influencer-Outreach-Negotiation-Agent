@@ -27,6 +27,7 @@ Other Modes:
 
 import sys
 import os
+import re
 import time
 import tempfile
 import asyncio
