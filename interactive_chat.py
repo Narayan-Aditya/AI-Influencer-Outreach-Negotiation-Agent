@@ -125,16 +125,17 @@ def run_chat_session():
     print("    - Type '/summary' to see current deal extraction")
     print("    - Type '/brief' to view the brand requirements again")
     print("    - Type '/voice off' or '/voice on' to toggle audio playback")
-    print("    - Type '/voice madhur' (Clean Hindi male tone - Recommended)")
-    print("    - Type '/voice swara' (Soft, natural female tone)")
-    print("    - Type '/voice english' (Indian English male tone)")
-    print("    - Type '/voice auto' (Auto-mirrors language)")
-    print("    - Type '/voice fast' (+22%) or '/voice normal' (+0%)")
+    print("    - Type '/voice neerja' (Top Indian Female Voice - Highly Recommended)")
+    print("    - Type '/voice swara' (Soft, natural Hindi female tone)")
+    print("    - Type '/voice madhur' (Clean Hindi male tone)")
+    print("    - Type '/voice prabhat' (Indian English male tone)")
+    print("    - Type '/voice auto' (Auto-mirrors language: Swara for Hindi, Neerja for English)")
+    print("    - Type '/voice fast' (+20%), '/voice relaxed' (+14%), or '/voice normal' (+0%)")
     print("    - Type 'exit' or 'quit' to end chat and finalize deal sheet")
     print("=" * 65 + "\n")
 
-    # Initialize Smart Voice Speaker (Clean dialogue, +16% rate)
-    speaker = VoiceSpeaker(mode="auto", rate="+16%", enabled=True)
+    # Initialize Smart Voice Speaker (Auto mirror: Swara for Hindi, Neerja for English)
+    speaker = VoiceSpeaker(mode="auto", rate="+12%", enabled=True)
     if speaker.enabled:
         print("🔊 Smart Voice Playback is ON (Auto Hindi/English mirror, clean spoken dialogue)\n")
 
@@ -197,29 +198,29 @@ def run_chat_session():
             print("🔊 Voice playback enabled.\n")
             continue
 
-        if user_input.lower() == "/voice salman":
-            speaker.set_mode("salman")
-            print("🎙️ Voice set to Salman (Warm, casual human male tone - Recommended).\n")
+        if user_input.lower() in ["/voice neerja", "/voice female"]:
+            speaker.set_mode("neerja")
+            print("🎙️ Voice set to Neerja (Top Indian Female Voice - Highly Recommended).\n")
             continue
 
-        if user_input.lower() in ["/voice swara", "/voice female"]:
+        if user_input.lower() in ["/voice swara", "/voice hindi"]:
             speaker.set_mode("swara")
-            print("🎙️ Voice set to Swara (Soft, expressive natural female tone).\n")
+            print("🎙️ Voice set to Swara (Soft, natural Hindi female tone).\n")
             continue
 
-        if user_input.lower() in ["/voice madhur", "/voice hindi"]:
+        if user_input.lower() in ["/voice madhur", "/voice male"]:
             speaker.set_mode("madhur")
             print("🎙️ Voice set to Madhur (Clean Hindi male tone).\n")
             continue
 
-        if user_input.lower() in ["/voice english", "/voice prabhat"]:
-            speaker.set_mode("english")
+        if user_input.lower() in ["/voice prabhat", "/voice english"]:
+            speaker.set_mode("prabhat")
             print("🎙️ Voice set to Prabhat (Indian English male tone).\n")
             continue
 
         if user_input.lower() == "/voice auto":
             speaker.set_mode("auto")
-            print("🎙️ Voice set to Auto (Mirrors Hindi/English with native phonetics).\n")
+            print("🎙️ Voice set to Auto (Swara for Hindi, Neerja for English).\n")
             continue
 
         if user_input.lower() == "/voice fast":
@@ -235,11 +236,6 @@ def run_chat_session():
         if user_input.lower() == "/voice normal":
             speaker.set_rate("+0%")
             print("⏱️ Voice speed set to Normal (+0%).\n")
-            continue
-
-        if user_input.lower() == "/voice kitten":
-            speaker.set_mode("kitten")
-            print("🎙️ Voice set to KittenTTS Nano.\n")
             continue
 
         if user_input.lower() == "/summary":

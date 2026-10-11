@@ -242,46 +242,34 @@ class StreamingVoicePipeline:
 
 
 class VoiceSpeaker:
-    def __init__(self, mode: str = "auto", rate: str = "+16%", enabled: bool = True):
+    def __init__(self, mode: str = "auto", rate: str = "+12%", enabled: bool = True):
         """
-        Modes:
-        - 'auto': Mirrors language naturally (Hindi -> Madhur, English -> Prabhat)
-        - 'madhur': hi-IN-MadhurNeural (Clean Hindi Male)
-        - 'swara': hi-IN-SwaraNeural (Natural Hindi Female)
-        - 'english': en-IN-PrabhatNeural (Indian English Male)
-        - 'kitten': KittenTTS Nano
+        Refined Voices:
+        - 'auto': Mirrors language (Swara for Hindi, Neerja for English)
+        - 'neerja': en-IN-NeerjaNeural (Top Indian Female Voice - Highly Recommended)
+        - 'swara': hi-IN-SwaraNeural (Soft, Natural Hindi Female Voice)
+        - 'madhur': hi-IN-MadhurNeural (Clean Hindi Male Voice)
+        - 'prabhat': en-IN-PrabhatNeural (Indian English Male Voice)
         """
         self.mode = mode
-        self.rate = rate  # +16% gives crisp, human-paced speech without rushing
+        self.rate = rate  # +12% gives crisp, human-paced speech without rushing
         self.enabled = enabled
         self._current_process = None
-        self._kitten_tts = None
         self._active_pipeline = None
 
     def _resolve_voice_name(self, lang: str) -> str:
-        if self.mode in ["swara", "hindi_female"]:
+        if self.mode in ["neerja"]:
+            return "en-IN-NeerjaNeural"
+        elif self.mode in ["swara", "hindi_female"]:
             return "hi-IN-SwaraNeural"
-        elif self.mode in ["english", "english_male"]:
-            return "en-IN-PrabhatNeural"
         elif self.mode in ["madhur", "hindi_male"]:
             return "hi-IN-MadhurNeural"
+        elif self.mode in ["prabhat", "english_male"]:
+            return "en-IN-PrabhatNeural"
         elif self.mode == "auto":
-            return "hi-IN-MadhurNeural" if lang == "hindi" else "en-IN-PrabhatNeural"
+            return "hi-IN-SwaraNeural" if lang == "hindi" else "en-IN-NeerjaNeural"
         else:
-            return "hi-IN-MadhurNeural" if lang == "hindi" else "en-IN-PrabhatNeural"
-
-    def _get_kitten(self):
-        if self._kitten_tts is None:
-            try:
-                import espeakng_loader
-                from phonemizer.backend.espeak.wrapper import EspeakWrapper
-                EspeakWrapper.set_library(espeakng_loader.get_library_path())
-                os.environ['ESPEAK_DATA_PATH'] = espeakng_loader.get_data_path()
-                from kittentts import KittenTTS
-                self._kitten_tts = KittenTTS()
-            except Exception as e:
-                print(f"⚠️ KittenTTS load error: {e}")
-        return self._kitten_tts
+            return "hi-IN-SwaraNeural" if lang == "hindi" else "en-IN-NeerjaNeural"
 
     def create_streaming_pipeline(self) -> StreamingVoicePipeline:
         """Stops any existing playback and creates a fresh streaming pipeline."""
@@ -305,7 +293,7 @@ class VoiceSpeaker:
         Cleans text for audio synthesis:
         - Removes all XML/HTML tags
         - Removes markdown formatting
-        - Expands numbers & pricing ('₹10k' -> 'दस हज़ार रुपये' in Hindi / 'ten thousand rupees' in English)
+        - Expands numbers & pricing ('₹10k' -> 'दस हजार रुपये' in Hindi / 'ten thousand rupees' in English)
         - Preserves Devanagari Unicode
         """
         # Strip ANY xml/html tags completely
@@ -313,41 +301,84 @@ class VoiceSpeaker:
         t = re.sub(r'[*_~`#\[\]]', '', t)
 
         # Human fillers smoothing
-        t = re.sub(r'\b(hmm|haan|acha|dekho|arey|well|got it)\.\.\.', r'\1, ', t, flags=re.IGNORECASE)
+        t = re.sub(r'\b(hmm+|haan|acha|accha|dekho|arey|well|got it)\.\.\.', r'\1, ', t, flags=re.IGNORECASE)
 
         if lang == "hindi":
-            # Expand 10k, ₹10k, 10,000 -> दस हज़ार रुपये
+            # Devanagari terms mapping for native, buttery smooth Hindi TTS
+            hindi_phonetic_map = {
+                r'\breels?\b': 'रील',
+                r'\bstor(?:y|ies)\b': 'स्टोरीज़',
+                r'\bposts?\b': 'पोस्ट',
+                r'\bvideos?\b': 'वीडियो',
+                r'\bshorts?\b': 'शॉर्ट्स',
+                r'\bcollab(?:oration)?\b': 'कोलैब',
+                r'\bconfirm\b': 'कन्फर्म',
+                r'\bbudget\b': 'बजट',
+                r'\bdeal\b': 'डील',
+                r'\btotal\b': 'टोटल',
+                r'\bpackage\b': 'पैकेज',
+                r'\bhaz[aā]+r\b': 'हजार',
+                r'\bhaan\b': 'हाँ',
+                r'\barey\b': 'अरे',
+                r'\bhmm+\b': 'हम्म',
+                r'\bachha\b|\bacha\b': 'अच्छा',
+                r'\btheek\b': 'ठीक',
+                r'\bperfect\b': 'परफेक्ट',
+            }
+
+            # Expand 10k, ₹10k, 10,000 -> दस हजार रुपये (using clean 'हजार' without nukta)
+            # Avoid repeating 'रुपये' if user/agent already wrote 'rupaye' or 'rupees' right after
             def replace_k_hi(m):
                 num = m.group(1)
                 word = HINDI_NUMBERS.get(num, num)
-                return f" {word} हज़ार रुपये "
+                return f" {word} हजार रुपये "
 
-            t = re.sub(r'(?:INR|₹)?\s*(\d+)\s*[kK]\b', replace_k_hi, t)
-            t = re.sub(r'(?:INR|₹)\s*(\d+)[,.]000\b', replace_k_hi, t)
-            t = re.sub(r'(?:INR|₹)\s*(\d+)000\b', replace_k_hi, t)
-            t = re.sub(r'(?:INR|₹)\s*(\d+)', r' \1 रुपये ', t)
+            # Match 10k with optional trailing rupaye/rupees
+            t = re.sub(r'(?:INR|₹)?\s*(\d+)\s*[kK](?:\s*(?:rupaye?|rupees|रुपये))?\b', replace_k_hi, t, flags=re.IGNORECASE)
+            t = re.sub(r'(?:INR|₹)\s*(\d+)[,.]000(?:\s*(?:rupaye?|rupees|रुपये))?\b', replace_k_hi, t, flags=re.IGNORECASE)
+            t = re.sub(r'(?:INR|₹)\s*(\d+)000(?:\s*(?:rupaye?|rupees|रुपये))?\b', replace_k_hi, t, flags=re.IGNORECASE)
+            t = re.sub(r'(?:INR|₹)\s*(\d+)(?:\s*(?:rupaye?|rupees|रुपये))?\b', r' \1 रुपये ', t, flags=re.IGNORECASE)
             t = t.replace('₹', 'रुपये')
+            # Clean any double 'रुपये'
+            t = re.sub(r'(?:रुपये\s*){2,}', 'रुपये ', t)
 
-            # Deliverables count: 1 Reel -> एक Reel, 2 Stories -> दो Stories
+            # Deliverables count: 1 Reel -> एक रील, 2 Stories -> दो स्टोरीज़
             def replace_deliverables_hi(m):
                 cnt = m.group(1)
-                item = m.group(2)
+                item = m.group(2).lower()
                 w = HINDI_NUMBERS.get(cnt, cnt)
-                return f"{w} {item}"
+                if 'reel' in item:
+                    item_hi = 'रील'
+                elif 'stor' in item:
+                    item_hi = 'स्टोरीज़'
+                elif 'post' in item:
+                    item_hi = 'पोस्ट'
+                elif 'short' in item:
+                    item_hi = 'शॉर्ट्स'
+                elif 'video' in item:
+                    item_hi = 'वीडियो'
+                else:
+                    item_hi = item
+                return f"{w} {item_hi}"
 
             t = re.sub(r'\b(\d+)\s*(Reels?|Story|Stories|Posts?|Shorts?|Videos?)\b', replace_deliverables_hi, t, flags=re.IGNORECASE)
             t = re.sub(r'(\d+)(?:st|nd|rd|th)\b', r'\1 तारीख', t, flags=re.IGNORECASE)
+
+            # Apply conversational phonetic map for Hindi voices
+            for pattern, replacement in hindi_phonetic_map.items():
+                t = re.sub(pattern, replacement, t, flags=re.IGNORECASE)
         else:
             def replace_k_en(m):
                 num = m.group(1)
                 word = ENG_NUMBERS.get(num, num)
                 return f" {word} thousand rupees "
 
-            t = re.sub(r'(?:INR|₹)?\s*(\d+)\s*[kK]\b', replace_k_en, t)
-            t = re.sub(r'(?:INR|₹)\s*(\d+)[,.]000\b', replace_k_en, t)
-            t = re.sub(r'(?:INR|₹)\s*(\d+)000\b', replace_k_en, t)
-            t = re.sub(r'(?:INR|₹)\s*(\d+)', r' \1 rupees ', t)
+            t = re.sub(r'(?:INR|₹)?\s*(\d+)\s*[kK](?:\s*(?:rupaye?|rupees))?\b', replace_k_en, t, flags=re.IGNORECASE)
+            t = re.sub(r'(?:INR|₹)\s*(\d+)[,.]000(?:\s*(?:rupaye?|rupees))?\b', replace_k_en, t, flags=re.IGNORECASE)
+            t = re.sub(r'(?:INR|₹)\s*(\d+)000(?:\s*(?:rupaye?|rupees))?\b', replace_k_en, t, flags=re.IGNORECASE)
+            t = re.sub(r'(?:INR|₹)\s*(\d+)(?:\s*(?:rupaye?|rupees))?\b', r' \1 rupees ', t, flags=re.IGNORECASE)
             t = t.replace('₹', 'rupees')
+            t = re.sub(r'(?:rupees\s*){2,}', 'rupees ', t, flags=re.IGNORECASE)
 
             def replace_deliverables_en(m):
                 cnt = m.group(1)
