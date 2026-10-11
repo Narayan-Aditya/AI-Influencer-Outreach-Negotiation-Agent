@@ -37,8 +37,8 @@ from voice_output import VoiceSpeaker, mix_audio_with_ambiance
 
 speaker_helper = VoiceSpeaker()
 
-HINDI_RAW = "Hmmmm... dekhiye Aarav, 1 Reel ka ₹10k... aur 2 Stories ka ₹6k mila ke total ₹16k confirm hai na? Deal theek hai toh batana."
-ENGLISH_RAW = "Hmmmm... well look Aarav, for 1 Reel that's ₹10k... and for 2 Stories ₹6k. Total comes to ₹16k, right? Deal confirmed if this works for you."
+HINDI_RAW = "हम्म... dekhiye Aarav, 1 Reel ka ₹10k... aur 2 Stories ka ₹6k mila ke total ₹16k confirm hai na? Deal theek hai toh batana."
+ENGLISH_RAW = "Hmm, well look Aarav, for 1 Reel that's ₹10k... and for 2 Stories ₹6k. Total comes to ₹16k, right? Deal confirmed if this works for you."
 
 VOICE_LIST = [
     {
