@@ -145,8 +145,8 @@ def run_chat_session():
     # Initial Agent Greeting (short & human-like, streamed)
     try:
         greeting_prompt = (
-            f"Send a natural, short 1-2 sentence opening message to {creator_name} ({creator_niche}) "
-            f"introducing yourself from {parsed_brief.brand_name} and asking if they are open for a quick collab."
+            f"You are on a live call with {creator_name} ({creator_niche}). Say your warm 1-2 sentence opening greeting directly to them now introducing yourself from {parsed_brief.brand_name}. "
+            f"Do NOT provide options, preamble, or explanations. Output ONLY your spoken words to {creator_name}."
         )
         print("🤖 Bot (Agency Manager):\n", end="", flush=True)
         pipeline = speaker.create_streaming_pipeline()

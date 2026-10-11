@@ -311,6 +311,18 @@ class StreamingVoicePipeline:
                     except Exception: pass
                 self.audio_queue.task_done()
 
+    def clean_candidate(self, text: str) -> str:
+        """Strips assistant preambles, options numbering, and meta-commentary so only true spoken dialogue is voiced."""
+        # Strip assistant preambles like "Sure, here is:", "Aarav ke liye ye options hain:", "Here are some options:"
+        text = re.sub(r'^(?:sure,?\s*(?:here (?:is|are)[^:\n]*:)?|here (?:is|\'s)[^:\n]*:|[\w\s]+ ke liye (?:aap )?inmein se[^:\n]*:|inmein se koi bhi[^:\n]*:)\s*', '', text, flags=re.IGNORECASE)
+        # Strip leading numbers like '1. ', '2. ', 'Option 1:'
+        text = re.sub(r'^(?:\d+[\.\)]|option\s*\d+:?)\s*[\"\']?', '', text, flags=re.IGNORECASE)
+        text = text.strip().strip('"\'*')
+        # If phrase is assistant meta-advice rather than dialogue, drop it
+        if re.search(r'\b(inmein se|choose one|sabse accha lage|copy karke bhej)\b', text, flags=re.IGNORECASE):
+            return ""
+        return text
+
     def push_chunk(self, chunk: str):
         """Buffers text tokens and enqueues completed clauses/sentences."""
         if not self.speaker.enabled:
@@ -337,14 +349,17 @@ class StreamingVoicePipeline:
                     if len(candidate) < 20:
                         break
 
-            if candidate:
-                self.sentence_queue.put(candidate)
+            cleaned = self.clean_candidate(candidate)
+            if cleaned:
+                self.sentence_queue.put(cleaned)
             self.buffer = self.buffer[end_pos:]
 
     def finish(self, wait: bool = False):
         """Flushes remaining text buffer and signals completion."""
         if self.buffer.strip():
-            self.sentence_queue.put(self.buffer.strip())
+            cleaned = self.clean_candidate(self.buffer.strip())
+            if cleaned:
+                self.sentence_queue.put(cleaned)
             self.buffer = ""
         self.sentence_queue.put(None)
 
