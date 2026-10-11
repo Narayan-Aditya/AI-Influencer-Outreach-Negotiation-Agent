@@ -27,6 +27,7 @@ voice_sample/
 
 # Test deal logs
 deal_summary_*.json
+deals_tracker.csv
 
 # OS & Editor
 .DS_Store

@@ -2,13 +2,16 @@
 Voice output engine supporting Clean Native Hindi/Hinglish (Neural), Indian English, and KittenML TTS.
 Features:
 - Dynamic Language Detection (Hindi vs English)
-- Paced speech rate (+18% speed)
+- Ultra-Low Latency Streaming Audio Pipeline (synthesizes sentence-by-sentence while Gemini streams)
+- Paced speech rate (+22% speed default for energetic human pacing)
 - Human conversational filler support ('Hmm...', 'Haan...')
-- Clean number/pricing pronunciation (e.g., '10k' -> 'दस हज़ार रुपये' in Hindi / 'ten thousand rupees' in English)
+- Clean number/pricing pronunciation (e.g., '₹10k' -> 'दस हज़ार रुपये' in Hindi / 'ten thousand rupees' in English)
+- Full Devanagari Unicode preservation
 """
 
 import os
 import re
+import queue
 import asyncio
 import tempfile
 import threading
@@ -25,21 +28,22 @@ import edge_tts
 HINDI_NUMBERS = {
     "1": "एक", "2": "दो", "3": "तीन", "4": "चार", "5": "पाँच",
     "6": "छह", "7": "सात", "8": "आठ", "9": "नौ", "10": "दस",
-    "12": "बारह", "15": "पंद्रह", "16": "सोलह", "18": "अठारह",
-    "20": "बीस", "22": "बाईस", "25": "पच्चीस", "28": "अट्ठाईस",
-    "30": "तीस", "35": "पैंतीस", "38": "अड़तीस", "40": "चालीस",
-    "45": "पैंतालीस", "50": "पचास", "60": "साठ", "70": "सत्तर",
-    "75": "पिचहत्तर", "80": "अस्सी", "90": "नब्बे", "100": "सौ"
+    "11": "ग्यारह", "12": "बारह", "13": "तेरह", "14": "चौदह", "15": "पंद्रह",
+    "16": "सोलह", "17": "सत्रह", "18": "अठारह", "19": "उन्नीस", "20": "बीस",
+    "22": "बाईस", "25": "पच्चीस", "28": "अट्ठाईस", "30": "तीस", "35": "पैंतीस",
+    "38": "अड़तीस", "40": "चालीस", "45": "पैंतालीस", "50": "पचास", "60": "साठ",
+    "70": "सत्तर", "75": "पिचहत्तर", "80": "अस्सी", "90": "नब्बे", "100": "सौ"
 }
 
 ENG_NUMBERS = {
     "1": "one", "2": "two", "3": "three", "4": "four", "5": "five",
     "6": "six", "7": "seven", "8": "eight", "9": "nine", "10": "ten",
-    "12": "twelve", "15": "fifteen", "16": "sixteen", "18": "eighteen",
-    "20": "twenty", "22": "twenty-two", "25": "twenty-five", "28": "twenty-eight",
-    "30": "thirty", "35": "thirty-five", "38": "thirty-eight", "40": "forty",
-    "45": "forty-five", "50": "fifty", "60": "sixty", "70": "seventy",
-    "75": "seventy-five", "80": "eighty", "90": "ninety", "100": "one hundred"
+    "11": "eleven", "12": "twelve", "13": "thirteen", "14": "fourteen", "15": "fifteen",
+    "16": "sixteen", "17": "seventeen", "18": "eighteen", "19": "nineteen", "20": "twenty",
+    "22": "twenty-two", "25": "twenty-five", "28": "twenty-eight", "30": "thirty",
+    "35": "thirty-five", "38": "thirty-eight", "40": "forty", "45": "forty-five",
+    "50": "fifty", "60": "sixty", "70": "seventy", "75": "seventy-five", "80": "eighty",
+    "90": "ninety", "100": "one hundred"
 }
 
 HINDI_HINTS = {
@@ -60,21 +64,180 @@ def detect_language(text: str) -> str:
     return 'hindi' if len(matches) >= 1 else 'english'
 
 
+class StreamingVoicePipeline:
+    """
+    Pipelined audio streaming engine.
+    Synthesizes sentence-by-sentence in a background thread and plays via afplay
+    while Gemini is still streaming tokens or while user starts typing!
+    """
+    def __init__(self, speaker: "VoiceSpeaker"):
+        self.speaker = speaker
+        self.buffer = ""
+        self.sentence_queue = queue.Queue()
+        self.audio_queue = queue.Queue()
+        self.is_active = True
+        self.temp_files = []
+        self._lock = threading.Lock()
+
+        # Start synthesis worker and playback worker
+        self.synth_thread = threading.Thread(target=self._synth_worker, daemon=True)
+        self.play_thread = threading.Thread(target=self._play_worker, daemon=True)
+        self.synth_thread.start()
+        self.play_thread.start()
+
+    def _synth_worker(self):
+        while self.is_active:
+            try:
+                item = self.sentence_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+
+            if item is None:
+                self.audio_queue.put(None)
+                break
+
+            text = item.strip()
+            if not text or not self.speaker.enabled:
+                self.sentence_queue.task_done()
+                continue
+
+            lang = detect_language(text)
+            cleaned = self.speaker.clean_text_for_speech(text, lang=lang)
+            if not cleaned:
+                self.sentence_queue.task_done()
+                continue
+
+            try:
+                if self.speaker.mode == "kitten":
+                    k = self.speaker._get_kitten()
+                    if k:
+                        import soundfile as sf
+                        audio = k.generate(cleaned, voice="expr-voice-2-m", speed=1.2)
+                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                            temp_path = f.name
+                        sf.write(temp_path, audio, 24000)
+                        with self._lock:
+                            self.temp_files.append(temp_path)
+                        self.audio_queue.put(temp_path)
+                else:
+                    if self.speaker.mode == "auto":
+                        voice_name = "hi-IN-MadhurNeural" if lang == "hindi" else "en-IN-PrabhatNeural"
+                    elif self.speaker.mode == "hindi_female":
+                        voice_name = "hi-IN-SwaraNeural"
+                    elif self.speaker.mode == "english_male":
+                        voice_name = "en-IN-PrabhatNeural"
+                    else:
+                        voice_name = "hi-IN-MadhurNeural"
+
+                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+                        temp_path = f.name
+
+                    communicate = edge_tts.Communicate(cleaned, voice=voice_name, rate=self.speaker.rate)
+                    asyncio.run(communicate.save(temp_path))
+
+                    with self._lock:
+                        self.temp_files.append(temp_path)
+                    self.audio_queue.put(temp_path)
+            except Exception:
+                pass
+            finally:
+                self.sentence_queue.task_done()
+
+    def _play_worker(self):
+        while self.is_active:
+            try:
+                item = self.audio_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+
+            if item is None:
+                break
+
+            temp_path = item
+            if not self.is_active:
+                if os.path.exists(temp_path):
+                    try: os.remove(temp_path)
+                    except Exception: pass
+                self.audio_queue.task_done()
+                continue
+
+            try:
+                proc = subprocess.Popen(["afplay", temp_path])
+                self.speaker._current_process = proc
+                proc.wait()
+            except Exception:
+                pass
+            finally:
+                if os.path.exists(temp_path):
+                    try: os.remove(temp_path)
+                    except Exception: pass
+                self.audio_queue.task_done()
+
+    def push_chunk(self, chunk: str):
+        """Buffers text tokens and enqueues completed clauses/sentences."""
+        if not self.speaker.enabled:
+            return
+
+        self.buffer += chunk
+
+        # Look for sentence boundaries: [.?!।\n]
+        while True:
+            match = re.search(r'([.!?।\n]+(?:\s+|$))', self.buffer)
+            if not match:
+                break
+            end_pos = match.end()
+            candidate = self.buffer[:end_pos].strip()
+            words = candidate.split()
+
+            # If phrase is too brief (e.g. 'Hmm...'), lookahead to merge with following sentence
+            if len(words) < 3:
+                sub = re.search(r'([.!?।\n]+(?:\s+|$))', self.buffer[end_pos:])
+                if sub:
+                    end_pos = end_pos + sub.end()
+                    candidate = self.buffer[:end_pos].strip()
+                else:
+                    if len(candidate) < 20:
+                        break
+
+            if candidate:
+                self.sentence_queue.put(candidate)
+            self.buffer = self.buffer[end_pos:]
+
+    def finish(self, wait: bool = False):
+        """Flushes remaining text buffer and signals completion."""
+        if self.buffer.strip():
+            self.sentence_queue.put(self.buffer.strip())
+            self.buffer = ""
+        self.sentence_queue.put(None)
+
+        if wait:
+            self.synth_thread.join()
+            self.play_thread.join()
+
+    def stop(self):
+        """Immediately halts current playback and cleans up."""
+        self.is_active = False
+        if self.speaker._current_process and self.speaker._current_process.poll() is None:
+            try:
+                self.speaker._current_process.terminate()
+            except Exception:
+                pass
+        with self._lock:
+            for path in self.temp_files:
+                if os.path.exists(path):
+                    try: os.remove(path)
+                    except Exception: pass
+            self.temp_files.clear()
+
+
 class VoiceSpeaker:
-    def __init__(self, mode: str = "auto", rate: str = "+18%", enabled: bool = True):
-        """
-        Modes:
-        - 'auto': Automatically mirrors language (Hindi -> Madhur, English -> Prabhat)
-        - 'hindi_male': hi-IN-MadhurNeural
-        - 'hindi_female': hi-IN-SwaraNeural
-        - 'english_male': en-IN-PrabhatNeural
-        - 'kitten': KittenTTS Nano
-        """
+    def __init__(self, mode: str = "auto", rate: str = "+22%", enabled: bool = True):
         self.mode = mode
-        self.rate = rate  # Increased speed by default (+18%)
+        self.rate = rate  # Default +22% for snappy, conversational pacing
         self.enabled = enabled
         self._current_process = None
         self._kitten_tts = None
+        self._active_pipeline = None
 
     def _get_kitten(self):
         if self._kitten_tts is None:
@@ -89,41 +252,93 @@ class VoiceSpeaker:
                 print(f"⚠️ KittenTTS load error: {e}")
         return self._kitten_tts
 
+    def create_streaming_pipeline(self) -> StreamingVoicePipeline:
+        """Stops any existing playback and creates a fresh streaming pipeline."""
+        self.stop()
+        self._active_pipeline = StreamingVoicePipeline(self)
+        return self._active_pipeline
+
+    def stop(self):
+        """Immediately stops all audio playback."""
+        if self._active_pipeline:
+            self._active_pipeline.stop()
+            self._active_pipeline = None
+        if self._current_process and self._current_process.poll() is None:
+            try:
+                self._current_process.terminate()
+            except Exception:
+                pass
+
     def clean_text_for_speech(self, text: str, lang: str = "hindi") -> str:
-        """Expands numbers, pricing ('10k' -> 'दस हज़ार रुपये' or 'ten thousand rupees'), and cleans formatting."""
+        """Expands numbers, pricing ('₹10k' -> 'दस हज़ार रुपये'), and cleans formatting without breaking Devanagari."""
         t = re.sub(r'[*_~`#\[\]]', '', text)
 
         # Human fillers smoothing: make sure 'Hmm...', 'Haan...' have a natural comma pause
         t = re.sub(r'\b(hmm|haan|acha|dekho|well|got it)\.\.\.', r'\1, ', t, flags=re.IGNORECASE)
 
         if lang == "hindi":
+            # 10k, 10K, ₹10k -> दस हज़ार रुपये
             def replace_k_hi(m):
                 num = m.group(1)
                 word = HINDI_NUMBERS.get(num, num)
                 return f" {word} हज़ार रुपये "
 
-            # ₹10k, 10k, INR 10,000 -> दस हज़ार रुपये
-            t = re.sub(r'(?:INR|₹)?\s*(\d+)k\b', replace_k_hi, t, flags=re.IGNORECASE)
-            t = re.sub(r'(?:INR|₹)\s*(\d+),000', replace_k_hi, t, flags=re.IGNORECASE)
-            t = re.sub(r'(?:INR|₹)\s*(\d+)', r' \1 रुपये ', t, flags=re.IGNORECASE)
+            t = re.sub(r'(?:INR|₹)?\s*(\d+)\s*[kK]\b', replace_k_hi, t)
+
+            # 10,000 or 10000 -> दस हज़ार रुपये
+            def replace_thousands_hi(m):
+                num = m.group(1)
+                word = HINDI_NUMBERS.get(num, num)
+                return f" {word} हज़ार रुपये "
+
+            t = re.sub(r'(?:INR|₹)\s*(\d+)[,.]000\b', replace_thousands_hi, t)
+            t = re.sub(r'(?:INR|₹)\s*(\d+)000\b', replace_thousands_hi, t)
+            t = re.sub(r'(?:INR|₹)\s*(\d+)', r' \1 रुपये ', t)
+            t = t.replace('₹', 'रुपये')
+
+            # Deliverables count: 1 Reel -> एक Reel, 2 Stories -> दो Stories
+            def replace_deliverables_hi(m):
+                cnt = m.group(1)
+                item = m.group(2)
+                w = HINDI_NUMBERS.get(cnt, cnt)
+                return f"{w} {item}"
+
+            t = re.sub(r'\b(\d+)\s*(Reels?|Story|Stories|Posts?|Shorts?|Videos?)\b', replace_deliverables_hi, t, flags=re.IGNORECASE)
             # Dates: 25th -> 25 तारीख
             t = re.sub(r'(\d+)(?:st|nd|rd|th)\b', r'\1 तारीख', t, flags=re.IGNORECASE)
         else:
+            # 10k, ₹10k -> ten thousand rupees
             def replace_k_en(m):
                 num = m.group(1)
                 word = ENG_NUMBERS.get(num, num)
                 return f" {word} thousand rupees "
 
-            # ₹10k, 10k -> ten thousand rupees
-            t = re.sub(r'(?:INR|₹)?\s*(\d+)k\b', replace_k_en, t, flags=re.IGNORECASE)
-            t = re.sub(r'(?:INR|₹)\s*(\d+),000', replace_k_en, t, flags=re.IGNORECASE)
-            t = re.sub(r'(?:INR|₹)\s*(\d+)', r' \1 rupees ', t, flags=re.IGNORECASE)
+            t = re.sub(r'(?:INR|₹)?\s*(\d+)\s*[kK]\b', replace_k_en, t)
 
-        # Clean special chars / emojis
-        t = re.sub(r'[^\w\s.,?!:;\-]', ' ', t)
+            def replace_thousands_en(m):
+                num = m.group(1)
+                word = ENG_NUMBERS.get(num, num)
+                return f" {word} thousand rupees "
+
+            t = re.sub(r'(?:INR|₹)\s*(\d+)[,.]000\b', replace_thousands_en, t)
+            t = re.sub(r'(?:INR|₹)\s*(\d+)000\b', replace_thousands_en, t)
+            t = re.sub(r'(?:INR|₹)\s*(\d+)', r' \1 rupees ', t)
+            t = t.replace('₹', 'rupees')
+
+            def replace_deliverables_en(m):
+                cnt = m.group(1)
+                item = m.group(2)
+                w = ENG_NUMBERS.get(cnt, cnt)
+                return f"{w} {item}"
+
+            t = re.sub(r'\b(\d+)\s*(Reels?|Story|Stories|Posts?|Shorts?|Videos?)\b', replace_deliverables_en, t, flags=re.IGNORECASE)
+
+        # Clean special symbols, but PRESERVE Devanagari range \u0900-\u097F
+        t = re.sub(r'[^\w\s.,?!:;\-\u0900-\u097F]', ' ', t)
         return " ".join(t.split()).strip()
 
     def speak(self, text: str, blocking: bool = False):
+        """Fallback one-shot speaker for static messages."""
         if not self.enabled:
             return
 
@@ -134,15 +349,13 @@ class VoiceSpeaker:
 
         def _worker():
             try:
-                # Stop any currently playing audio
-                if self._current_process and self._current_process.poll() is None:
-                    self._current_process.terminate()
+                self.stop()
 
                 if self.mode == "kitten":
                     k = self._get_kitten()
                     if k:
                         import soundfile as sf
-                        audio = k.generate(cleaned, voice="expr-voice-2-m", speed=1.15)
+                        audio = k.generate(cleaned, voice="expr-voice-2-m", speed=1.2)
                         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                             temp_path = f.name
                         sf.write(temp_path, audio, 24000)
@@ -151,7 +364,6 @@ class VoiceSpeaker:
                         if os.path.exists(temp_path):
                             os.remove(temp_path)
                 else:
-                    # Select voice based on mode & language
                     if self.mode == "auto":
                         voice_name = "hi-IN-MadhurNeural" if lang == "hindi" else "en-IN-PrabhatNeural"
                     elif self.mode == "hindi_female":

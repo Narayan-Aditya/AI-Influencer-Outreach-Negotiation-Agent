@@ -129,22 +129,31 @@ def run_chat_session():
     print("    - Type 'exit' or 'quit' to end chat and finalize deal sheet")
     print("=" * 65 + "\n")
 
-    # Initialize Smart Auto-Language Voice Speaker (+18% human pacing speed)
-    speaker = VoiceSpeaker(mode="auto", rate="+18%", enabled=True)
+    # Initialize Smart Auto-Language Voice Speaker (+22% human pacing speed, real-time streaming)
+    speaker = VoiceSpeaker(mode="auto", rate="+22%", enabled=True)
     if speaker.enabled:
-        print("🔊 Smart Voice Playback is ON (Auto Hindi/English mirror, faster +18% human pacing)\n")
+        print("🔊 Smart Voice Playback is ON (Auto Hindi/English mirror, faster +22% human pacing, real-time audio stream)\n")
 
     chat = engine.create_creator_chat(parsed_brief, creator_name=creator_name, creator_niche=creator_niche)
     history = []
 
-    # Initial Agent Greeting (short & human-like)
+    # Initial Agent Greeting (short & human-like, streamed)
     try:
-        initial_response = chat.send_message(
-            f"Send a natural, short 1-2 sentence opening message to {creator_name} ({creator_niche}) introducing yourself from {parsed_brief.brand_name} and asking if they are open for a quick collab."
+        greeting_prompt = (
+            f"Send a natural, short 1-2 sentence opening message to {creator_name} ({creator_niche}) "
+            f"introducing yourself from {parsed_brief.brand_name} and asking if they are open for a quick collab."
         )
-        agent_msg = initial_response.text
-        print(f"🤖 Bot (Agency Manager):\n{agent_msg}\n")
-        speaker.speak(agent_msg)
+        print("🤖 Bot (Agency Manager):\n", end="", flush=True)
+        pipeline = speaker.create_streaming_pipeline()
+        full_agent_msg = []
+        for chunk in chat.send_message_stream(greeting_prompt):
+            sys.stdout.write(chunk)
+            sys.stdout.flush()
+            pipeline.push_chunk(chunk)
+            full_agent_msg.append(chunk)
+        print("\n")
+        pipeline.finish(wait=False)
+        agent_msg = "".join(full_agent_msg).strip()
         history.append({"role": "agent", "text": agent_msg})
     except Exception as e:
         print(f"❌ Error starting conversation: {e}")
@@ -155,6 +164,7 @@ def run_chat_session():
         try:
             user_input = input(f"👤 {creator_name}: ").strip()
         except (KeyboardInterrupt, EOFError):
+            speaker.stop()
             print("\nExiting chat...")
             break
 
@@ -162,6 +172,7 @@ def run_chat_session():
             continue
 
         if user_input.lower() in ["exit", "quit"]:
+            speaker.stop()
             break
 
         if user_input.lower() == "/brief":
@@ -173,6 +184,7 @@ def run_chat_session():
 
         if user_input.lower() == "/voice off":
             speaker.enabled = False
+            speaker.stop()
             print("🔇 Voice playback disabled.\n")
             continue
 
@@ -224,13 +236,20 @@ def run_chat_session():
         history.append({"role": "creator", "text": user_input})
 
         try:
-            response = chat.send_message(user_input)
-            agent_msg = response.text
-            print(f"\n🤖 Bot (Agency Manager):\n{agent_msg}\n")
-            speaker.speak(agent_msg)
+            print("\n🤖 Bot (Agency Manager):\n", end="", flush=True)
+            pipeline = speaker.create_streaming_pipeline()
+            full_agent_msg = []
+            for chunk in chat.send_message_stream(user_input):
+                sys.stdout.write(chunk)
+                sys.stdout.flush()
+                pipeline.push_chunk(chunk)
+                full_agent_msg.append(chunk)
+            print("\n")
+            pipeline.finish(wait=False)
+            agent_msg = "".join(full_agent_msg).strip()
             history.append({"role": "agent", "text": agent_msg})
         except Exception as e:
-            print(f"❌ Error getting bot response: {e}\n")
+            print(f"\n❌ Error getting bot response: {e}\n")
 
     # Final Deal Summary
     if len(history) > 1:

@@ -20,12 +20,12 @@ except ImportError:
     raise ImportError("google-genai is not installed. Please run `pip install google-genai`")
 
 
-# Fallback models in order of current speed and availability
+# Fallback models in order of lowest latency and available quota
 FALLBACK_MODELS = [
-    "gemini-3.5-flash",
-    "gemini-3.7-flash",
-    "gemini-3.8-flash",
     "gemini-flash-lite-latest",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-3-flash-preview",
 ]
 
 
@@ -82,21 +82,85 @@ class ResilientChat:
                         contents=self.history,
                         config=config
                     )
-                    # Record assistant response in history
-                    reply_text = response.text.strip()
+                    # Extract text safely without triggering thought_signature warnings
+                    reply_text = ""
+                    if response.candidates:
+                        for cand in response.candidates:
+                            if cand.content and cand.content.parts:
+                                for part in cand.content.parts:
+                                    if hasattr(part, 'text') and part.text:
+                                        reply_text += part.text
+                    if not reply_text and hasattr(response, 'text') and response.text:
+                        reply_text = response.text
+                    reply_text = reply_text.strip()
+                    
                     self.history.append({"role": "model", "parts": [{"text": reply_text}]})
                     return response
                 except Exception as e:
                     last_error = e
                     err_str = str(e)
-                    # If model is unavailable or overloaded, retry or fallback
                     if "503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str:
                         time.sleep(1.0)
                         continue
                     else:
-                        break  # Try next model
+                        break
 
-        # If all failed, raise the last error
+        raise last_error
+
+    def send_message_stream(self, user_text: str):
+        """
+        Streams response chunks in real-time from Gemini with fallback across models.
+        Yields text chunks (str).
+        Maintains conversation history identically to send_message.
+        """
+        self.history.append({"role": "user", "parts": [{"text": user_text}]})
+        
+        last_error = None
+        for model in self.models:
+            for attempt in range(2):
+                try:
+                    config = types.GenerateContentConfig(
+                        system_instruction=self.system_instruction,
+                        temperature=self.temperature,
+                    )
+                    response_stream = self.client.models.generate_content_stream(
+                        model=model,
+                        contents=self.history,
+                        config=config
+                    )
+                    
+                    full_reply = []
+                    started_yielding = False
+                    for chunk in response_stream:
+                        chunk_text = ""
+                        if chunk.candidates:
+                            for cand in chunk.candidates:
+                                if cand.content and cand.content.parts:
+                                    for part in cand.content.parts:
+                                        if hasattr(part, 'text') and part.text:
+                                            chunk_text += part.text
+                        elif hasattr(chunk, 'text') and chunk.text:
+                            chunk_text = chunk.text
+                        
+                        if chunk_text:
+                            started_yielding = True
+                            full_reply.append(chunk_text)
+                            yield chunk_text
+                    
+                    combined = "".join(full_reply).strip()
+                    self.history.append({"role": "model", "parts": [{"text": combined}]})
+                    return
+                except Exception as e:
+                    last_error = e
+                    if started_yielding:
+                        # Cannot fallback midway once chunks have already been emitted
+                        raise e
+                    err_str = str(e)
+                    if "503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str:
+                        time.sleep(1.0)
+                        continue
+                    else:
+                        break
         raise last_error
 
 
