@@ -125,14 +125,14 @@ def run_chat_session():
     print("    - Type '/summary' to see current deal extraction")
     print("    - Type '/brief' to view the brand requirements again")
     print("    - Type '/voice off' or '/voice on' to toggle TTS audio playback")
-    print("    - Type '/voice hindi' (Clean Indian Male), '/voice female', or '/voice kitten'")
+    print("    - Type '/voice auto' (Auto Hindi/English mirror), '/voice fast', or '/voice normal'")
     print("    - Type 'exit' or 'quit' to end chat and finalize deal sheet")
     print("=" * 65 + "\n")
 
-    # Initialize Clean Hindi / Hinglish Voice Speaker
-    speaker = VoiceSpeaker(mode="hindi_male", enabled=True)
+    # Initialize Smart Auto-Language Voice Speaker (+18% human pacing speed)
+    speaker = VoiceSpeaker(mode="auto", rate="+18%", enabled=True)
     if speaker.enabled:
-        print("🔊 Clean Hindi Audio playback is ON (Natural Indian Hindi/Hinglish speech)\n")
+        print("🔊 Smart Voice Playback is ON (Auto Hindi/English mirror, faster +18% human pacing)\n")
 
     chat = engine.create_creator_chat(parsed_brief, creator_name=creator_name, creator_niche=creator_niche)
     history = []
@@ -179,6 +179,21 @@ def run_chat_session():
         if user_input.lower() == "/voice on":
             speaker.enabled = True
             print("🔊 Voice playback enabled.\n")
+            continue
+
+        if user_input.lower() == "/voice auto":
+            speaker.set_mode("auto")
+            print("🎙️ Voice set to Auto (Mirrors Hindi / English automatically).\n")
+            continue
+
+        if user_input.lower() == "/voice fast":
+            speaker.set_rate("+25%")
+            print("⚡ Voice speed set to Fast (+25%).\n")
+            continue
+
+        if user_input.lower() == "/voice normal":
+            speaker.set_rate("+0%")
+            print("⏱️ Voice speed set to Normal (+0%).\n")
             continue
 
         if user_input.lower() == "/voice hindi":
