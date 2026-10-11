@@ -519,45 +519,256 @@ class VoiceSpeaker:
         t = re.sub(r'[*_~`#\[\]]', '', t)
 
         # Thinking fillers normalization:
-        # In English, use 'Hmm, ' or 'Um, ' (standard dictionary interjections).
+        # CRITICAL: 'hum' alone = हम (we/pronoun), 'humm'/'hummm' = हम्म (filler sound)
+        # 'hmm'/'hmmm' = always filler (no vowel = not a real word)
         # NEVER use 'Hmmmm' or 4+ repeated consonants because TTS spells them letter-by-letter (H-M-M-M-M).
-        # In Hindi, use phonetic Devanagari 'हम्म... '
         if lang == "hindi":
-            t = re.sub(r'\b(hmm+|hum+)\s*(?:\.{2,}|[.,;])?', 'हम्म... ', t, flags=re.IGNORECASE)
-            t = re.sub(r'\b(uh+|um+)\s*(?:\.{2,}|[.,;])?', 'उम्म... ', t, flags=re.IGNORECASE)
+            # Fillers: hmm, hmmm, humm, hummm → हम्म...  (NOT 'hum' alone!)
+            t = re.sub(r'\b(hmm+)\s*(?:\.{2,}|[.,;])?', 'हम्म... ', t, flags=re.IGNORECASE)
+            t = re.sub(r'\b(humm+)\s*(?:\.{2,}|[.,;])?', 'हम्म... ', t, flags=re.IGNORECASE)
+            t = re.sub(r'\b(uh+|umm+)\s*(?:\.{2,}|[.,;])?', 'उम्म... ', t, flags=re.IGNORECASE)
             t = re.sub(r'\b(haan|acha|accha|dekho|dekhiye|suno|arey|well|wait)\s*[.]{2,}', r'\1... ', t, flags=re.IGNORECASE)
         else:
-            t = re.sub(r'\b(hmm+|hum+)\s*(?:\.{2,}|[.,;])?', 'Hmm, ', t, flags=re.IGNORECASE)
-            t = re.sub(r'\b(uh+|um+)\s*(?:\.{2,}|[.,;])?', 'Um, ', t, flags=re.IGNORECASE)
+            t = re.sub(r'\b(hmm+)\s*(?:\.{2,}|[.,;])?', 'Hmm, ', t, flags=re.IGNORECASE)
+            t = re.sub(r'\b(humm+)\s*(?:\.{2,}|[.,;])?', 'Hmm, ', t, flags=re.IGNORECASE)
+            t = re.sub(r'\b(uh+|umm+)\s*(?:\.{2,}|[.,;])?', 'Um, ', t, flags=re.IGNORECASE)
             t = re.sub(r'\b(well|wait|got it)\s*[.]{2,}', r'\1... ', t, flags=re.IGNORECASE)
 
         if lang == "hindi":
             # Devanagari terms mapping for native, buttery smooth Hindi TTS
+            # Converts romanized Hinglish → Devanagari so Hindi TTS voices pronounce correctly
             hindi_phonetic_map = {
+                # --- Fillers & Interjections (hum vs humm distinction) ---
+                r'\bhmm+\b': 'हम्म',          # filler hum sound (already caught above, safety net)
+                r'\bhumm+\b': 'हम्म',         # filler hum sound with vowel
+                r'\barey\b': 'अरे',
+                r'\bhaan\b': 'हाँ',
+                r'\bachha\b|\bacha\b': 'अच्छा',
+                r'\bachhaaa?\b': 'अच्छा',
+
+                # --- Pronouns & Common Words (CRITICAL: 'hum' = हम, NOT filler!) ---
+                r'\bhum\b': 'हम',             # we (pronoun, NOT filler!)
+                r'\bhumne\b': 'हमने',          # we did
+                r'\bhumara\b|\bhamara\b': 'हमारा',   # our (masc)
+                r'\bhumari\b|\bhamari\b': 'हमारी',   # our (fem)
+                r'\bhume\b|\bhumein\b|\bhamein\b|\bhamko\b': 'हमें',  # to us
+                r'\btum\b': 'तुम',             # you
+                r'\btumhara\b': 'तुम्हारा',
+                r'\btumhari\b': 'तुम्हारी',
+                r'\btumhe\b|\btumhein\b|\btumko\b': 'तुम्हें',
+                r'\baap\b': 'आप',
+                r'\baapka\b': 'आपका',
+                r'\baapki\b': 'आपकी',
+                r'\baapko\b': 'आपको',
+                r'\bmera\b': 'मेरा',
+                r'\bmeri\b': 'मेरी',
+                r'\bmujhe\b|\bmujhko\b': 'मुझे',
+                r'\bapna\b': 'अपना',
+                r'\bapni\b': 'अपनी',
+
+                # --- Common Verbs & Actions ---
+                r'\bdekhiye\b': 'देखिए',
+                r'\bdekho\b': 'देखो',
+                r'\bsuno\b': 'सुनो',
+                r'\bbatao\b': 'बताओ',
+                r'\bbatana\b': 'बताना',
+                r'\bbata\b': 'बता',
+                r'\bkaro\b': 'करो',
+                r'\bkarein\b|\bkaren\b': 'करें',
+                r'\bkar\b': 'कर',
+                r'\bkarna\b': 'करना',
+                r'\bdena\b': 'देना',
+                r'\blena\b': 'लेना',
+                r'\bdo\b': 'दो',
+                r'\bbhejo\b': 'भेजो',
+                r'\bsamjho\b': 'समझो',
+                r'\bsamjhein\b': 'समझें',
+                r'\bchahiye\b': 'चाहिए',
+                r'\bhoga\b': 'होगा',
+                r'\bhogi\b': 'होगी',
+                r'\brahega\b': 'रहेगा',
+                r'\brahegi\b': 'रहेगी',
+                r'\bsakte\b': 'सकते',
+                r'\bsakti\b': 'सकती',
+                r'\bdiya\b': 'दिया',
+                r'\bliya\b': 'लिया',
+                r'\bkiya\b': 'किया',
+                r'\bbolna\b': 'बोलना',
+                r'\bbolo\b': 'बोलो',
+
+                # --- Conjunctions, Particles & Connectors ---
+                r'\bhai\b': 'है',
+                r'\bhain\b': 'हैं',
+                r'\btha\b': 'था',
+                r'\bthi\b': 'थी',
+                r'\btoh\b': 'तो',
+                r'\baur\b': 'और',
+                r'\blekin\b': 'लेकिन',
+                r'\bkyunki\b|\bkyuki\b': 'क्योंकि',
+                r'\bki\b': 'की',
+                r'\bka\b': 'का',
+                r'\bke\b': 'के',
+                r'\bpe\b': 'पे',
+                r'\bse\b': 'से',
+                r'\bme\b': 'में',
+                r'\bmein\b': 'में',
+                r'\bya\b': 'या',
+                r'\bjaise\b': 'जैसे',
+                r'\btaaki\b': 'ताकि',
+                r'\bagar\b': 'अगर',
+                r'\bwarna\b': 'वरना',
+                r'\bbhi\b': 'भी',
+                r'\bsirf\b': 'सिर्फ',
+                r'\bbas\b': 'बस',
+                r'\bkuch\b': 'कुछ',
+
+                # --- Questions & Interrogatives ---
+                r'\bkya\b': 'क्या',
+                r'\bkaise\b': 'कैसे',
+                r'\bkab\b': 'कब',
+                r'\bkitna\b': 'कितना',
+                r'\bkitne\b': 'कितने',
+                r'\bkahan\b|\bkahaan\b': 'कहाँ',
+                r'\bkaisa\b': 'कैसा',
+
+                # --- Affirmatives & Negatives ---
+                r'\bnahi\b|\bnahin\b': 'नहीं',
+                r'\bsahi\b': 'सही',
+                r'\btheek\b': 'ठीक',
+                r'\bpakka\b': 'पक्का',
+                r'\bbilkul\b': 'बिल्कुल',
+                r'\bzaroor\b|\bjaroor\b': 'ज़रूर',
+                r'\bbadhiya\b': 'बढ़िया',
+
+                # --- Negotiation & Business Terms ---
+                r'\bpaise\b|\bpaisa\b': 'पैसे',
+                r'\brupaye?\b': 'रुपये',
+                r'\bhaz[aā]+r\b': 'हजार',
+                r'\blakh\b': 'लाख',
+                r'\bbaat\b': 'बात',
+                r'\bmatlab\b': 'मतलब',
+                r'\bliye\b': 'लिए',
+                r'\baage\b': 'आगे',
+                r'\bpehle\b|\bpahle\b': 'पहले',
+                r'\bbaad\b': 'बाद',
+                r'\bnaam\b': 'नाम',
+                r'\bkaam\b': 'काम',
+                r'\bmila\b': 'मिला',
+                r'\bmilke\b': 'मिलके',
+
+                # --- Small Particles & Tag Words ---
+                r'\bna\b': 'ना',
+                r'\bnaa\b': 'ना',
+                r'\bji\b': 'जी',
+                r'\bjee\b': 'जी',
+                r'\bwo\b|\bwoh\b': 'वो',
+                r'\bye\b|\byeh\b': 'ये',
+                r'\bek\b': 'एक',
+                r'\btak\b': 'तक',
+                r'\babhi\b': 'अभी',
+                r'\bab\b': 'अब',
+                r'\bfir\b|\bphir\b': 'फिर',
+                r'\bkarte\b': 'करते',
+                r'\bkarti\b': 'करती',
+                r'\bhota\b': 'होता',
+                r'\bhoti\b': 'होती',
+                r'\bmilega\b': 'मिलेगा',
+                r'\bmilegi\b': 'मिलेगी',
+                r'\bbanta\b': 'बनता',
+                r'\bbanti\b': 'बनती',
+                r'\bsab\b': 'सब',
+                r'\bdono\b|\bdonon\b': 'दोनों',
+                r'\bpura\b|\bpoora\b': 'पूरा',
+                r'\bpuri\b|\bpoori\b': 'पूरी',
+                r'\bbaki\b': 'बाकी',
+                r'\bcapped\b': 'कैप्ड',
+                r'\bdrop\b': 'ड्रॉप',
+                r'\bkarke\b': 'करके',
+                r'\bkarne\b': 'करने',
+                r'\bhonge\b': 'होंगे',
+                r'\brehta\b|\brahta\b': 'रहता',
+                r'\brehti\b|\brahti\b': 'रहती',
+                r'\brehna\b|\brahna\b': 'रहना',
+                r'\brehega\b': 'रहेगा',
+                r'\brehegi\b': 'रहेगी',
+                r'\baround\b': 'अराउंड',
+                r'\bcontrol\b': 'कंट्रोल',
+                r'\bmain\b': 'मेन',
+                r'\bnaturally\b': 'नैचुरली',
+                r'\bintegrate\b': 'इंटीग्रेट',
+                r'\bgifting\b': 'गिफ्टिंग',
+                r'\bproduct\b': 'प्रोडक्ट',
+                r'\bstandard\b': 'स्टैंडर्ड',
+                r'\bhote\b': 'होते',
+                r'\bhi\b': 'ही',
+                r'\bho\b': 'हो',
+                r'\bjayega\b': 'जाएगा',
+                r'\bjayegi\b': 'जाएगी',
+                r'\bdin\b': 'दिन',
+                r'\bon\b': 'ऑन',
+                r'\bgo-live\b': 'गो-लाइव',
+                r'\bpercent\b': 'परसेंट',
+                r'\bkal\b': 'कल',
+                r'\baaj\b': 'आज',
+                r'\bdenge\b': 'देंगे',
+                r'\bdegi\b': 'देगी',
+                r'\blenge\b': 'लेंगे',
+                r'\blegi\b': 'लेगी',
+                r'\bkarenge\b': 'करेंगे',
+                r'\bkaregi\b': 'करेगी',
+                r'\bkarega\b': 'करेगा',
+                r'\bbatayenge\b': 'बताएँगे',
+                r'\bsamajh\b': 'समझ',
+                r'\bbhejenge\b': 'भेजेंगे',
+                r'\bsend\b': 'सेंड',
+                r'\bcall\b': 'कॉल',
+                r'\bready\b': 'रेडी',
+                r'\bopen\b': 'ओपन',
+                r'\binterest(?:ed)?\b': 'इंटरेस्ट',
+                r'\bcollaboration\b': 'कोलैबोरेशन',
+                r'\bfollowers?\b': 'फॉलोअर्स',
+                r'\bengagement\b': 'एंगेजमेंट',
+                r'\binfluencer\b': 'इन्फ्लुएंसर',
+                r'\bcreator\b': 'क्रिएटर',
+                r'\bmanager\b': 'मैनेजर',
+                r'\bagency\b': 'एजेंसी',
+                # --- English Loanwords (common in business Hinglish) ---
                 r'\breels?\b': 'रील',
                 r'\bstor(?:y|ies)\b': 'स्टोरीज़',
                 r'\bposts?\b': 'पोस्ट',
                 r'\bvideos?\b': 'वीडियो',
                 r'\bshorts?\b': 'शॉर्ट्स',
                 r'\bcollab(?:oration)?\b': 'कोलैब',
-                r'\bconfirm\b': 'कन्फर्म',
+                r'\bconfirm(?:ed)?\b': 'कन्फर्म',
                 r'\bbudget\b': 'बजट',
                 r'\bdeal\b': 'डील',
                 r'\btotal\b': 'टोटल',
                 r'\bpackage\b': 'पैकेज',
-                r'\bhaz[aā]+r\b': 'हजार',
-                r'\bhaan\b': 'हाँ',
-                r'\barey\b': 'अरे',
-                r'\bhmm+\b|\bhum+\b': 'हम्म',
-                r'\bdekhiye\b': 'देखिए',
-                r'\bdekho\b': 'देखो',
-                r'\bsuno\b': 'सुनो',
                 r'\bactually\b': 'एक्चुअली',
                 r'\bwait\b': 'वेट',
                 r'\bwell\b': 'वेल',
-                r'\bachha\b|\bacha\b': 'अच्छा',
-                r'\btheek\b': 'ठीक',
                 r'\bperfect\b': 'परफेक्ट',
+                r'\bproceed\b': 'प्रोसीड',
+                r'\block\b': 'लॉक',
+                r'\brates?\b': 'रेट',
+                r'\badvance\b': 'एडवांस',
+                r'\bpayment\b': 'पेमेंट',
+                r'\bdeliver(?:y)?\b': 'डिलीवरी',
+                r'\bcontent\b': 'कंटेंट',
+                r'\bcreative\b': 'क्रिएटिव',
+                r'\bscript\b': 'स्क्रिप्ट',
+                r'\blaunch\b': 'लॉन्च',
+                r'\bbrand\b': 'ब्रैंड',
+                r'\bcampaign\b': 'कैम्पेन',
+                r'\bonline\b': 'ऑनलाइन',
+                r'\bfinal\b': 'फाइनल',
+                r'\bapproval\b': 'अप्रूवल',
+                r'\bdraft\b': 'ड्राफ्ट',
+
+                # --- Addressing & Exclamations ---
+                r'\bbhai\b': 'भाई',
+                r'\byaar\b': 'यार',
+                r'\bboss\b': 'बॉस',
             }
 
             # Expand 10k, ₹10k, 10,000 -> दस हजार रुपये (using clean 'हजार' without nukta)
@@ -621,8 +832,9 @@ class VoiceSpeaker:
                 return f"{w} {item}"
 
             t = re.sub(r'\b(\d+)\s*(Reels?|Story|Stories|Posts?|Shorts?|Videos?)\b', replace_deliverables_en, t, flags=re.IGNORECASE)
-            t = re.sub(r'\b(hmm+|hum+)\s*(?:\.{2,}|[.,;])?', 'Hmm, ', t, flags=re.IGNORECASE)
-            t = re.sub(r'\b(uh+|um+)\s*(?:\.{2,}|[.,;])?', 'Um, ', t, flags=re.IGNORECASE)
+            t = re.sub(r'\b(hmm+)\s*(?:\.{2,}|[.,;])?', 'Hmm, ', t, flags=re.IGNORECASE)
+            t = re.sub(r'\b(humm+)\s*(?:\.{2,}|[.,;])?', 'Hmm, ', t, flags=re.IGNORECASE)
+            t = re.sub(r'\b(uh+|umm+)\s*(?:\.{2,}|[.,;])?', 'Um, ', t, flags=re.IGNORECASE)
 
         # Natural conversational cadence around pricing & deliverables
         if lang == "hindi":
