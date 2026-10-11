@@ -22,6 +22,89 @@ warnings.filterwarnings("ignore")
 logging.getLogger("google_genai").setLevel(logging.ERROR)
 
 import edge_tts
+import numpy as np
+import scipy.signal as signal
+import soundfile as sf
+
+
+def create_ambiance(num_samples: int, sr: int = 24000, ambiance_type: str = "ac_fan", level_db: float = -32.0) -> np.ndarray:
+    """
+    Synthesizes ultra-realistic room tone presence to mask digital TTS silence:
+    - 'ac_fan' / 'ac': Split AC room tone (smooth air flow + subtle compressor hum + presence)
+    - 'fan': Ceiling/Desk fan (airflow + rhythmic blade pulsation + motor hum)
+    - 'crowd': Distant coffee shop / office crowd murmur + ambient room air
+    """
+    white = np.random.randn(num_samples)
+    t = np.arange(num_samples) / sr
+
+    if ambiance_type == "fan":
+        # Ceiling/Desk fan: airflow + rhythmic blade pulsation (~4.5 Hz) + 50Hz hum
+        sos = signal.butter(3, [60, 450], btype="bandpass", fs=sr, output="sos")
+        air = signal.sosfilt(sos, white)
+        air = air / (np.max(np.abs(air)) + 1e-9)
+        mod = 1.0 + 0.25 * np.sin(2 * np.pi * 4.5 * t)
+        air = air * mod
+        hum = 0.35 * np.sin(2 * np.pi * 50 * t) + 0.15 * np.sin(2 * np.pi * 100 * t)
+        amb = 0.7 * air + 0.3 * hum
+    elif ambiance_type == "crowd":
+        # Distant coffee shop / office crowd murmur: bandpass filtered babble + room resonance
+        sos1 = signal.butter(3, [200, 1800], btype="bandpass", fs=sr, output="sos")
+        murmur = signal.sosfilt(sos1, white)
+        env = np.abs(signal.sosfilt(signal.butter(2, 1.5, fs=sr, output="sos"), np.random.randn(num_samples)))
+        env = env / (np.max(env) + 1e-9)
+        murmur = murmur * (0.5 + 0.5 * env)
+        murmur = murmur / (np.max(np.abs(murmur)) + 1e-9)
+
+        sos_room = signal.butter(2, [80, 500], btype="bandpass", fs=sr, output="sos")
+        room = signal.sosfilt(sos_room, white)
+        room = room / (np.max(np.abs(room)) + 1e-9)
+        amb = 0.6 * murmur + 0.4 * room
+    else:  # 'ac_fan' or 'ac'
+        # Split AC room tone: smooth air rush + low compressor drone + faint presence
+        sos_ac = signal.butter(3, [70, 550], btype="bandpass", fs=sr, output="sos")
+        ac_rush = signal.sosfilt(sos_ac, white)
+        ac_rush = ac_rush / (np.max(np.abs(ac_rush)) + 1e-9)
+        drone = 0.4 * np.sin(2 * np.pi * 50 * t) + 0.2 * np.sin(2 * np.pi * 100 * t)
+        sos_hiss = signal.butter(2, [1200, 3200], btype="bandpass", fs=sr, output="sos")
+        hiss = 0.1 * signal.sosfilt(sos_hiss, white)
+        hiss = hiss / (np.max(np.abs(hiss)) + 1e-9)
+        amb = 0.75 * ac_rush + 0.18 * drone + 0.07 * hiss
+
+    amb = amb / (np.max(np.abs(amb)) + 1e-9)
+    amplitude = 10.0 ** (level_db / 20.0)
+    amb = amb * amplitude
+
+    # Smooth edges fade (40ms)
+    fade = int(min(sr * 0.04, num_samples / 10))
+    if fade > 0:
+        c = np.linspace(0, 1, fade)
+        amb[:fade] *= c
+        amb[-fade:] *= c[::-1]
+    return amb
+
+
+def mix_audio_with_ambiance(file_path: str, ambiance_type: str = "ac_fan", level_db: float = -32.0) -> str:
+    """Mixes subtle background acoustic room tone with speech audio."""
+    try:
+        data, sr = sf.read(file_path)
+        if len(data.shape) > 1:
+            data = data[:, 0]
+        amb = create_ambiance(len(data), sr=sr, ambiance_type=ambiance_type, level_db=level_db)
+        mixed = data + amb
+        peak = np.max(np.abs(mixed))
+        if peak > 0.98:
+            mixed = (mixed / peak) * 0.98
+        out_path = file_path.rsplit(".", 1)[0] + "_amb.wav"
+        sf.write(out_path, mixed, sr)
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+        return out_path
+    except Exception:
+        return file_path
+
 
 
 # Number mappings for clean, natural speech pronunciation
@@ -125,9 +208,22 @@ class StreamingVoicePipeline:
                     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
                         temp_path = f.name
 
-                    # Pass PURE CLEAN TEXT to edge_tts (zero XML tags)
-                    communicate = edge_tts.Communicate(cleaned, voice=voice_name, rate=self.speaker.rate)
+                    # Pass PURE CLEAN TEXT to edge_tts with rate and lowered pitch (-2Hz)
+                    communicate = edge_tts.Communicate(
+                        cleaned,
+                        voice=voice_name,
+                        rate=self.speaker.rate,
+                        pitch=self.speaker.pitch
+                    )
                     asyncio.run(communicate.save(temp_path))
+
+                    # Mix subtle background acoustic presence (AC/fan/crowd room tone)
+                    if self.speaker.ambiance and self.speaker.ambiance != "off":
+                        temp_path = mix_audio_with_ambiance(
+                            temp_path,
+                            ambiance_type=self.speaker.ambiance,
+                            level_db=self.speaker.ambiance_level_db
+                        )
 
                     with self._lock:
                         self.temp_files.append(temp_path)
@@ -242,7 +338,15 @@ class StreamingVoicePipeline:
 
 
 class VoiceSpeaker:
-    def __init__(self, mode: str = "auto", rate: str = "+12%", enabled: bool = True):
+    def __init__(
+        self,
+        mode: str = "auto",
+        rate: str = "+12%",
+        pitch: str = "-2Hz",
+        ambiance: str = "ac_fan",
+        ambiance_level_db: float = -32.0,
+        enabled: bool = True
+    ):
         """
         Refined Voices:
         - 'auto': Mirrors language (Swara for Hindi, Neerja for English)
@@ -250,9 +354,17 @@ class VoiceSpeaker:
         - 'swara': hi-IN-SwaraNeural (Soft, Natural Hindi Female Voice)
         - 'madhur': hi-IN-MadhurNeural (Clean Hindi Male Voice)
         - 'prabhat': en-IN-PrabhatNeural (Indian English Male Voice)
+
+        Acoustic Presence:
+        - pitch: '-2Hz' (1-2 points lower for warm, non-digital chest resonance)
+        - ambiance: 'ac_fan' (subtle AC/fan room tone masking digital silence), 'fan', 'crowd', or 'off'
+        - ambiance_level_db: -32.0 dB (ultra-subtle, natural background presence)
         """
         self.mode = mode
         self.rate = rate  # +12% gives crisp, human-paced speech without rushing
+        self.pitch = pitch  # -2Hz gives warm, grounded human tone
+        self.ambiance = ambiance
+        self.ambiance_level_db = ambiance_level_db
         self.enabled = enabled
         self._current_process = None
         self._active_pipeline = None
@@ -424,8 +536,20 @@ class VoiceSpeaker:
                     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
                         temp_path = f.name
 
-                    communicate = edge_tts.Communicate(cleaned, voice=voice_name, rate=self.rate)
+                    communicate = edge_tts.Communicate(
+                        cleaned,
+                        voice=voice_name,
+                        rate=self.rate,
+                        pitch=self.pitch
+                    )
                     asyncio.run(communicate.save(temp_path))
+
+                    if self.ambiance and self.ambiance != "off":
+                        temp_path = mix_audio_with_ambiance(
+                            temp_path,
+                            ambiance_type=self.ambiance,
+                            level_db=self.ambiance_level_db
+                        )
 
                     self._current_process = subprocess.Popen(["afplay", temp_path])
                     self._current_process.wait()
@@ -445,3 +569,10 @@ class VoiceSpeaker:
 
     def set_rate(self, rate: str):
         self.rate = rate
+
+    def set_pitch(self, pitch: str):
+        self.pitch = pitch
+
+    def set_ambiance(self, ambiance: str, level_db: float = -32.0):
+        self.ambiance = ambiance
+        self.ambiance_level_db = level_db

@@ -131,13 +131,15 @@ def run_chat_session():
     print("    - Type '/voice prabhat' (Indian English male tone)")
     print("    - Type '/voice auto' (Auto-mirrors language: Swara for Hindi, Neerja for English)")
     print("    - Type '/voice fast' (+20%), '/voice relaxed' (+14%), or '/voice normal' (+0%)")
+    print("    - Type '/ambiance ac', '/ambiance fan', '/ambiance crowd', or '/ambiance off'")
+    print("    - Type '/pitch lower' (-2Hz, warm), '/pitch normal' (+0Hz)")
     print("    - Type 'exit' or 'quit' to end chat and finalize deal sheet")
     print("=" * 65 + "\n")
 
-    # Initialize Smart Voice Speaker (Auto mirror: Swara for Hindi, Neerja for English)
-    speaker = VoiceSpeaker(mode="auto", rate="+12%", enabled=True)
+    # Initialize Smart Voice Speaker (Auto mirror: Swara for Hindi, Neerja for English, with warm -2Hz pitch and room ambiance)
+    speaker = VoiceSpeaker(mode="auto", rate="+12%", pitch="-2Hz", ambiance="ac_fan", enabled=True)
     if speaker.enabled:
-        print("🔊 Smart Voice Playback is ON (Auto Hindi/English mirror, clean spoken dialogue)\n")
+        print("🔊 Smart Voice Playback is ON (Auto Hindi/English mirror, -2Hz pitch, AC/room ambiance)\n")
 
     chat = engine.create_creator_chat(parsed_brief, creator_name=creator_name, creator_niche=creator_niche)
     history = []
@@ -236,6 +238,43 @@ def run_chat_session():
         if user_input.lower() == "/voice normal":
             speaker.set_rate("+0%")
             print("⏱️ Voice speed set to Normal (+0%).\n")
+            continue
+
+        if user_input.lower().startswith("/ambiance"):
+            parts = user_input.lower().split()
+            amb_type = parts[1] if len(parts) > 1 else "ac"
+            if amb_type in ["ac", "ac_fan"]:
+                speaker.set_ambiance("ac_fan")
+                print("🌬️ Acoustic ambiance set to AC Room Tone.\n")
+            elif amb_type in ["fan", "ceiling_fan"]:
+                speaker.set_ambiance("fan")
+                print("🌀 Acoustic ambiance set to Ceiling Fan Tone.\n")
+            elif amb_type in ["crowd", "office", "cafe"]:
+                speaker.set_ambiance("crowd")
+                print("☕ Acoustic ambiance set to Soft Office/Cafe Murmur.\n")
+            elif amb_type in ["off", "none", "silent"]:
+                speaker.set_ambiance("off")
+                print("🔇 Background ambiance turned OFF.\n")
+            else:
+                speaker.set_ambiance("ac_fan")
+                print("🌬️ Acoustic ambiance set to AC Room Tone.\n")
+            continue
+
+        if user_input.lower().startswith("/pitch"):
+            parts = user_input.lower().split()
+            pitch_type = parts[1] if len(parts) > 1 else "lower"
+            if pitch_type in ["lower", "-2hz", "-2"]:
+                speaker.set_pitch("-2Hz")
+                print("🎙️ Pitch set to Lowered (-2Hz, warm human tone).\n")
+            elif pitch_type in ["deep", "-4hz", "-4"]:
+                speaker.set_pitch("-4Hz")
+                print("🎙️ Pitch set to Deep (-4Hz).\n")
+            elif pitch_type in ["normal", "+0hz", "0"]:
+                speaker.set_pitch("+0Hz")
+                print("🎙️ Pitch set to Normal (+0Hz).\n")
+            else:
+                speaker.set_pitch(pitch_type)
+                print(f"🎙️ Pitch set to {pitch_type}.\n")
             continue
 
         if user_input.lower() == "/summary":
